@@ -3,7 +3,6 @@ import express from "express";
 import cors from "cors";
 
 const app = express();
-
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
@@ -30,21 +29,21 @@ app.use(
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
     message: "StudySphere backend is running"
   });
 });
 
 app.get("/api/health", (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
     message: "StudySphere API is running"
   });
 });
 
 app.get("/api/progress", (req, res) => {
-  res.status(200).json({
+  res.json({
     totalSessions: 0,
     quizCount: 0,
     doubtCount: 0,
@@ -64,16 +63,62 @@ app.post("/api/ai/doubt", async (req, res) => {
       });
     }
 
-    return res.status(200).json({
+    return res.json({
       success: true,
-      answer: `Received your ${subject || ""} question: ${question}`
+      answer: `Received your ${subject || "General"} question: ${question}`
     });
   } catch (error) {
     console.error("Doubt error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to process the question"
+      message: "Unable to process doubt"
+    });
+  }
+});
+
+app.post("/api/ai/quiz", async (req, res) => {
+  try {
+    const {
+      topic,
+      subject,
+      difficulty = "medium",
+      count = 5
+    } = req.body;
+
+    const quizTopic = topic || subject || "General Knowledge";
+    const questionCount = Math.min(Math.max(Number(count) || 5, 1), 20);
+
+    const questions = Array.from(
+      { length: questionCount },
+      (_, index) => ({
+        id: index + 1,
+        question: `Practice question ${index + 1} about ${quizTopic}`,
+        options: [
+          "Option A",
+          "Option B",
+          "Option C",
+          "Option D"
+        ],
+        answer: "Option A",
+        correctAnswer: "Option A",
+        explanation: `This is a practice question about ${quizTopic}.`,
+        difficulty
+      })
+    );
+
+    return res.json({
+      success: true,
+      topic: quizTopic,
+      difficulty,
+      questions
+    });
+  } catch (error) {
+    console.error("Quiz error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Unable to generate quiz"
     });
   }
 });
