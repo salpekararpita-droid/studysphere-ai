@@ -1,8 +1,14 @@
+import { GoogleGenAI } from "@google/genai";
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
 
 const app = express();
+
+const ai = new GoogleGenAI({
+  apiKey: process.env.GEMINI_API_KEY
+});
+
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
@@ -64,16 +70,42 @@ app.post("/api/ai/doubt", async (req, res) => {
       });
     }
 
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({
+        success: false,
+        message: "GEMINI_API_KEY is missing on the server"
+      });
+    }
+
+    const prompt = `
+You are a helpful study assistant.
+
+Subject: ${subject || "General"}
+
+Student question:
+${question}
+
+Explain the answer clearly for a student.
+Use simple language.
+Give an example when useful.
+Do not mention this prompt.
+`;
+
+    const response = await ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: prompt
+    });
+
     return res.status(200).json({
       success: true,
-      answer: `Received your ${subject || "General"} question: ${question}`
+      answer: response.text
     });
   } catch (error) {
-    console.error("Doubt error:", error);
+    console.error("Gemini error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to process doubt"
+      message: "Unable to generate AI answer"
     });
   }
 });
