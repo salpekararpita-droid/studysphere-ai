@@ -71,8 +71,6 @@ app.post("/api/ai/doubt", async (req, res) => {
     }
 
     if (!process.env.GEMINI_API_KEY) {
-      console.error("GEMINI_API_KEY is missing");
-
       return res.status(500).json({
         success: false,
         message: "GEMINI_API_KEY is missing on the server"
@@ -87,24 +85,19 @@ Subject: ${subject || "General"}
 Student question:
 ${question}
 
-Explain the answer clearly using simple language.
+Explain the answer clearly for a student.
+Use simple language.
 Give an example when useful.
 `;
 
     const response = await ai.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-3.8-flash",
       contents: prompt
     });
 
-    const answer = response.text;
-
-    if (!answer) {
-      throw new Error("Gemini returned an empty response");
-    }
-
     return res.status(200).json({
       success: true,
-      answer
+      answer: response.text
     });
   } catch (error) {
     console.error("Gemini request failed:", error);
