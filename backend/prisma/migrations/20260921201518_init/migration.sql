@@ -1,0 +1,8 @@
+-- CreateTable
+CREATE TABLE "StudySession" (
+    "id" INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
+    "type" TEXT NOT NULL,
+    "topic" TEXT NOT NULL,
+    "score" INTEGER,
+    "createdAt" DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
