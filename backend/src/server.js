@@ -3,6 +3,9 @@ import express from "express";
 import cors from "cors";
 
 const app = express();
+
+const PORT = process.env.PORT || 3000;
+
 const allowedOrigins = [
   "https://studysphere-ai-salpe.vercel.app",
   "http://localhost:5173",
@@ -11,7 +14,13 @@ const allowedOrigins = [
 
 app.use(
   cors({
-    origin: allowedOrigins,
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked origin: ${origin}`));
+      }
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: true
@@ -20,39 +29,13 @@ app.use(
 
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
-const FRONTEND_URL = "https://studysphere-ai-salpe.vercel.app";
+app.get("/", (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: "StudySphere backend is running"
+  });
+});
 
-const allowedOrigins = [
-  FRONTEND_URL,
-  "http://localhost:5173",
-  "http://localhost:3000"
-];
-
-const corsOptions = {
-  origin: function (origin, callback) {
-    // Allows requests from Postman, curl, and server-to-server clients
-    if (!origin) {
-      return callback(null, true);
-    }
-
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-
-    return callback(new Error(`CORS blocked origin: ${origin}`));
-  },
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: true
-};
-
-// CORS must be before your routes
-app.use(cors(corsOptions));
-
-app.use(express.json());
-
-// Health check
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
@@ -60,7 +43,6 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-// Progress endpoint
 app.get("/api/progress", (req, res) => {
   res.status(200).json({
     totalSessions: 0,
@@ -71,7 +53,6 @@ app.get("/api/progress", (req, res) => {
   });
 });
 
-// Temporary doubt endpoint test
 app.post("/api/ai/doubt", async (req, res) => {
   try {
     const { question, subject } = req.body;
@@ -83,21 +64,20 @@ app.post("/api/ai/doubt", async (req, res) => {
       });
     }
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       answer: `Received your ${subject || ""} question: ${question}`
     });
   } catch (error) {
-    console.error("Doubt endpoint error:", error);
+    console.error("Doubt error:", error);
 
-    res.status(500).json({
+    return res.status(500).json({
       success: false,
       message: "Unable to process the question"
     });
   }
 });
 
-// Unknown routes
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -105,7 +85,6 @@ app.use((req, res) => {
   });
 });
 
-// Error handler
 app.use((error, req, res, next) => {
   console.error("Server error:", error.message);
 
@@ -116,7 +95,7 @@ app.use((error, req, res, next) => {
     });
   }
 
-  res.status(500).json({
+  return res.status(500).json({
     success: false,
     message: "Internal server error"
   });
