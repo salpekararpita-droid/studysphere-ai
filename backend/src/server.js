@@ -3,6 +3,14 @@ import express from "express";
 import cors from "cors";
 
 const app = express();
+
+app.get("/api/version", (req, res) => {
+  res.json({
+    version: "quiz-route-version-2",
+    file: "backend/src/server.js"
+  });
+});
+
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
