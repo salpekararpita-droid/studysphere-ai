@@ -13,26 +13,23 @@ app.get("/api/version", (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 
-const allowedOrigins = [
-  "https://studysphere-ai-salpe.vercel.app",
-  "http://localhost:5173",
-  "http://localhost:3000"
-];
+const allowedOrigin = "https://studysphere-ai-salpe.vercel.app";
 
 app.use(
   cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        callback(new Error(`CORS blocked origin: ${origin}`));
-      }
-    },
+    origin: allowedOrigin,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: true
+    credentials: false
   })
 );
+
+app.options("/api/*", cors({
+  origin: allowedOrigin,
+  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization"],
+  credentials: false
+}));
 
 app.use(express.json());
 
