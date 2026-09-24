@@ -3,52 +3,48 @@ import express from "express";
 import cors from "cors";
 
 const app = express();
-
-app.get("/api/version", (req, res) => {
-  res.json({
-    version: "quiz-route-version-2",
-    file: "backend/src/server.js"
-  });
-});
-
 const PORT = process.env.PORT || 3000;
 
-const allowedOrigin = "https://studysphere-ai-salpe.vercel.app";
+const allowedOrigins = [
+  "https://studysphere-ai-salpe.vercel.app",
+  "https://studysphere-ai-salpe-git-main-salpekararpita-droid.vercel.app",
+  "http://localhost:5173",
+  "http://localhost:3000"
+];
 
 app.use(
   cors({
-    origin: allowedOrigin,
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked origin: ${origin}`));
+      }
+    },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
     credentials: false
   })
 );
 
-app.options("/api/*", cors({
-  origin: allowedOrigin,
-  methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  credentials: false
-}));
-
 app.use(express.json());
 
 app.get("/", (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
     message: "StudySphere backend is running"
   });
 });
 
 app.get("/api/health", (req, res) => {
-  res.json({
+  res.status(200).json({
     success: true,
     message: "StudySphere API is running"
   });
 });
 
 app.get("/api/progress", (req, res) => {
-  res.json({
+  res.status(200).json({
     totalSessions: 0,
     quizCount: 0,
     doubtCount: 0,
@@ -68,7 +64,7 @@ app.post("/api/ai/doubt", async (req, res) => {
       });
     }
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       answer: `Received your ${subject || "General"} question: ${question}`
     });
@@ -112,7 +108,7 @@ app.post("/api/ai/quiz", async (req, res) => {
       })
     );
 
-    return res.json({
+    return res.status(200).json({
       success: true,
       topic: quizTopic,
       difficulty,
