@@ -36,6 +36,41 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 
+// Retry wrapper for transient Gemini errors (503 UNAVAILABLE / high demand)
+function isOverloadedError(error) {
+  const msg = error?.message || String(error);
+  return (
+    msg.includes("UNAVAILABLE") ||
+    msg.includes("high demand") ||
+    msg.includes("503")
+  );
+}
+
+async function generateWithRetry(params, maxRetries = 3) {
+  let lastError;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      return await ai.models.generateContent(params);
+    } catch (error) {
+      lastError = error;
+
+      if (isOverloadedError(error) && attempt < maxRetries) {
+        const delay = attempt * 1500; // 1.5s, 3s, 4.5s
+        console.warn(
+          `Gemini overloaded (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms`
+        );
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError;
+}
+
 app.get("/", (req, res) => {
   res.status(200).json({
     success: true,
@@ -92,7 +127,7 @@ Use simple language.
 Give an example when useful.
 `;
 
-    const response = await ai.models.generateContent({
+    const response = await generateWithRetry({
       model: "gemini-3.8-flash",
       contents: prompt
     });
@@ -109,6 +144,14 @@ Give an example when useful.
     });
   } catch (error) {
     console.error("Gemini doubt error:", error);
+
+    if (isOverloadedError(error)) {
+      return res.status(503).json({
+        success: false,
+        message: "Gemini is busy right now, please try again in a moment",
+        details: error?.message || String(error)
+      });
+    }
 
     return res.status(500).json({
       success: false,
@@ -156,7 +199,7 @@ Return ONLY valid JSON in this exact structure:
 }
 `;
 
-    const response = await ai.models.generateContent({
+    const response = await generateWithRetry({
       model: "gemini-3.8-flash",
       contents: prompt,
       config: {
@@ -190,6 +233,14 @@ Return ONLY valid JSON in this exact structure:
     });
   } catch (error) {
     console.error("Gemini quiz error:", error);
+
+    if (isOverloadedError(error)) {
+      return res.status(503).json({
+        success: false,
+        message: "Gemini is busy right now, please try again in a moment",
+        details: error?.message || String(error)
+      });
+    }
 
     return res.status(500).json({
       success: false,
