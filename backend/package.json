@@ -15,7 +15,7 @@
     
   },
   "dependencies": {
-    "@google/genai": "latest",
+    "@google/genai": "2.0.0",
     "cors": "latest",
     "dotenv": "latest",
     "express": "latest"
