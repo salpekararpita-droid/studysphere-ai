@@ -1,7 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
-import { GoogleGenAI } from "@google/genai";
+import Groq from "groq-sdk";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,10 +14,12 @@ const allowedOrigins = [
   "http://localhost:3000"
 ];
 
-const geminiApiKey = process.env.GEMINI_API_KEY;
+const groqApiKey = process.env.GROQ_API_KEY;
 
-const ai = geminiApiKey
-  ? new GoogleGenAI({ apiKey: geminiApiKey })
+const groq = groqApiKey
+  ? new Groq({
+      apiKey: groqApiKey
+    })
   : null;
 
 app.use(
@@ -26,6 +28,7 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
+
       return callback(new Error(`CORS blocked origin: ${origin}`));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -35,41 +38,6 @@ app.use(
 );
 
 app.use(express.json({ limit: "1mb" }));
-
-// Retry wrapper for transient Gemini errors (503 UNAVAILABLE / high demand)
-function isOverloadedError(error) {
-  const msg = error?.message || String(error);
-  return (
-    msg.includes("UNAVAILABLE") ||
-    msg.includes("high demand") ||
-    msg.includes("503")
-  );
-}
-
-async function generateWithRetry(params, maxRetries = 3) {
-  let lastError;
-
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      return await ai.models.generateContent(params);
-    } catch (error) {
-      lastError = error;
-
-      if (isOverloadedError(error) && attempt < maxRetries) {
-        const delay = attempt * 1500; // 1.5s, 3s, 4.5s
-        console.warn(
-          `Gemini overloaded (attempt ${attempt}/${maxRetries}), retrying in ${delay}ms`
-        );
-        await new Promise((r) => setTimeout(r, delay));
-        continue;
-      }
-
-      throw error;
-    }
-  }
-
-  throw lastError;
-}
 
 app.get("/", (req, res) => {
   res.status(200).json({
@@ -82,7 +50,7 @@ app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,
     message: "StudySphere API is running",
-    geminiConfigured: Boolean(geminiApiKey)
+    groqConfigured: Boolean(groqApiKey)
   });
 });
 
@@ -107,35 +75,34 @@ app.post("/api/ai/doubt", async (req, res) => {
       });
     }
 
-    if (!ai) {
+    if (!groq) {
       return res.status(500).json({
         success: false,
-        message: "GEMINI_API_KEY is missing on Render"
+        message: "GROQ_API_KEY is missing on Render"
       });
     }
 
-    const prompt = `
-You are StudySphere, a helpful study assistant.
-
-Subject: ${subject || "General"}
-
-Student question:
-${question}
-
-Answer clearly and accurately for a student.
-Use simple language.
-Give an example when useful.
-`;
-
-    const response = await generateWithRetry({
-      model: "gemini-3.8-flash",
-      contents: prompt
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You are StudySphere, a helpful study assistant. Explain concepts clearly using simple language and examples."
+        },
+        {
+          role: "user",
+          content: `Subject: ${subject || "General"}\n\nStudent question:\n${question}`
+        }
+      ],
+      temperature: 0.4,
+      max_tokens: 800
     });
 
-    const answer = response.text;
+    const answer = completion.choices?.[0]?.message?.content;
 
     if (!answer) {
-      throw new Error("Gemini returned an empty answer");
+      throw new Error("Groq returned an empty answer");
     }
 
     return res.status(200).json({
@@ -143,15 +110,7 @@ Give an example when useful.
       answer
     });
   } catch (error) {
-    console.error("Gemini doubt error:", error);
-
-    if (isOverloadedError(error)) {
-      return res.status(503).json({
-        success: false,
-        message: "Gemini is busy right now, please try again in a moment",
-        details: error?.message || String(error)
-      });
-    }
+    console.error("Groq doubt error:", error);
 
     return res.status(500).json({
       success: false,
@@ -170,23 +129,36 @@ app.post("/api/ai/quiz", async (req, res) => {
       count = 5
     } = req.body;
 
-    if (!ai) {
+    if (!groq) {
       return res.status(500).json({
         success: false,
-        message: "GEMINI_API_KEY is missing on Render"
+        message: "GROQ_API_KEY is missing on Render"
       });
     }
 
     const quizTopic = topic || subject || "General Knowledge";
-    const questionCount = Math.min(Math.max(Number(count) || 5, 1), 20);
+    const questionCount = Math.min(
+      Math.max(Number(count) || 5, 1),
+      20
+    );
 
-    const prompt = `
+    const completion = await groq.chat.completions.create({
+      model: "llama-3.3-70b-versatile",
+      messages: [
+        {
+          role: "system",
+          content:
+            "You generate valid JSON only. Never use markdown fences."
+        },
+        {
+          role: "user",
+          content: `
 Create exactly ${questionCount} multiple-choice quiz questions.
 
 Topic: ${quizTopic}
 Difficulty: ${difficulty}
 
-Return ONLY valid JSON in this exact structure:
+Return ONLY this JSON structure:
 {
   "questions": [
     {
@@ -197,32 +169,26 @@ Return ONLY valid JSON in this exact structure:
     }
   ]
 }
-`;
-
-    const response = await generateWithRetry({
-      model: "gemini-3.8-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json"
+`
+        }
+      ],
+      temperature: 0.2,
+      max_tokens: 2500,
+      response_format: {
+        type: "json_object"
       }
     });
 
-    const rawText = response.text;
+    const rawText = completion.choices?.[0]?.message?.content;
 
     if (!rawText) {
-      throw new Error("Gemini returned an empty quiz response");
+      throw new Error("Groq returned an empty quiz response");
     }
 
-    const cleanedText = rawText
-      .replace(/^```json\s*/i, "")
-      .replace(/^```\s*/i, "")
-      .replace(/\s*```$/i, "")
-      .trim();
-
-    const parsed = JSON.parse(cleanedText);
+    const parsed = JSON.parse(rawText);
 
     if (!Array.isArray(parsed.questions)) {
-      throw new Error("Gemini returned invalid quiz JSON");
+      throw new Error("Groq returned invalid quiz JSON");
     }
 
     return res.status(200).json({
@@ -232,15 +198,7 @@ Return ONLY valid JSON in this exact structure:
       questions: parsed.questions
     });
   } catch (error) {
-    console.error("Gemini quiz error:", error);
-
-    if (isOverloadedError(error)) {
-      return res.status(503).json({
-        success: false,
-        message: "Gemini is busy right now, please try again in a moment",
-        details: error?.message || String(error)
-      });
-    }
+    console.error("Groq quiz error:", error);
 
     return res.status(500).json({
       success: false,
