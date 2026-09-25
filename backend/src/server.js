@@ -26,7 +26,6 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
-
       return callback(new Error(`CORS blocked origin: ${origin}`));
     },
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -136,19 +135,15 @@ app.post("/api/ai/quiz", async (req, res) => {
     }
 
     const quizTopic = topic || subject || "General Knowledge";
-    const questionCount = Math.min(
-      Math.max(Number(count) || 5, 1),
-      20
-    );
+    const questionCount = Math.min(Math.max(Number(count) || 5, 1), 20);
 
-    const input = `
+    const prompt = `
 Create exactly ${questionCount} multiple-choice quiz questions.
 
 Topic: ${quizTopic}
 Difficulty: ${difficulty}
 
-Return ONLY valid JSON. Do not include markdown fences.
-Use exactly this structure:
+Return ONLY valid JSON in this exact structure:
 {
   "questions": [
     {
@@ -161,12 +156,15 @@ Use exactly this structure:
 }
 `;
 
-    const interaction = await ai.interactions.create({
+    const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
-      input
+      contents: prompt,
+      config: {
+        responseMimeType: "application/json"
+      }
     });
 
-    const rawText = interaction.output_text;
+    const rawText = response.text;
 
     if (!rawText) {
       throw new Error("Gemini returned an empty quiz response");
