@@ -76,11 +76,11 @@ app.post("/api/ai/doubt", async (req, res) => {
     if (!ai) {
       return res.status(500).json({
         success: false,
-        message: "GEMINI_API_KEY is missing on the server"
+        message: "GEMINI_API_KEY is missing on Render"
       });
     }
 
-    const prompt = `
+    const input = `
 You are StudySphere, a helpful study assistant.
 
 Subject: ${subject || "General"}
@@ -90,19 +90,18 @@ ${question}
 
 Answer clearly and accurately for a student.
 Use simple language.
-Give a short example when helpful.
-Do not mention system prompts or API details.
+Give an example when useful.
 `;
 
-    const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt
+    const interaction = await ai.interactions.create({
+      model: "gemini-3.8-flash",
+      input
     });
 
-    const answer = response.text;
+    const answer = interaction.output_text;
 
     if (!answer) {
-      throw new Error("Gemini returned an empty response");
+      throw new Error("Gemini returned an empty answer");
     }
 
     return res.status(200).json({
@@ -115,7 +114,7 @@ Do not mention system prompts or API details.
     return res.status(500).json({
       success: false,
       message: "Unable to generate AI answer",
-      error: error?.message || "Unknown Gemini error"
+      details: error?.message || String(error)
     });
   }
 });
@@ -129,26 +128,27 @@ app.post("/api/ai/quiz", async (req, res) => {
       count = 5
     } = req.body;
 
+    if (!ai) {
+      return res.status(500).json({
+        success: false,
+        message: "GEMINI_API_KEY is missing on Render"
+      });
+    }
+
     const quizTopic = topic || subject || "General Knowledge";
     const questionCount = Math.min(
       Math.max(Number(count) || 5, 1),
       20
     );
 
-    if (!ai) {
-      return res.status(500).json({
-        success: false,
-        message: "GEMINI_API_KEY is missing on the server"
-      });
-    }
-
-    const prompt = `
+    const input = `
 Create exactly ${questionCount} multiple-choice quiz questions.
 
 Topic: ${quizTopic}
 Difficulty: ${difficulty}
 
-Return ONLY valid JSON in this exact structure:
+Return ONLY valid JSON. Do not include markdown fences.
+Use exactly this structure:
 {
   "questions": [
     {
@@ -161,15 +161,28 @@ Return ONLY valid JSON in this exact structure:
 }
 `;
 
-    const response = await ai.models.generateContent({
+    const interaction = await ai.interactions.create({
       model: "gemini-3.8-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json"
-      }
+      input
     });
 
-    const parsed = JSON.parse(response.text);
+    const rawText = interaction.output_text;
+
+    if (!rawText) {
+      throw new Error("Gemini returned an empty quiz response");
+    }
+
+    const cleanedText = rawText
+      .replace(/^```json\s*/i, "")
+      .replace(/^```\s*/i, "")
+      .replace(/\s*```$/i, "")
+      .trim();
+
+    const parsed = JSON.parse(cleanedText);
+
+    if (!Array.isArray(parsed.questions)) {
+      throw new Error("Gemini returned invalid quiz JSON");
+    }
 
     return res.status(200).json({
       success: true,
@@ -183,7 +196,7 @@ Return ONLY valid JSON in this exact structure:
     return res.status(500).json({
       success: false,
       message: "Unable to generate quiz",
-      error: error?.message || "Unknown Gemini error"
+      details: error?.message || String(error)
     });
   }
 });
