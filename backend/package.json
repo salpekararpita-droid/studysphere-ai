@@ -12,13 +12,13 @@
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio"
-    
   },
   "dependencies": {
     "@google/genai": "2.0.0",
     "cors": "latest",
     "dotenv": "latest",
-    "express": "latest"
+    "express": "latest",
+    "groq-sdk": "^1.6.0"
   },
   "devDependencies": {
     "eslint": "^9.0.0",
