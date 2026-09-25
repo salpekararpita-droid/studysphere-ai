@@ -79,7 +79,7 @@ app.post("/api/ai/doubt", async (req, res) => {
       });
     }
 
-    const input = `
+    const prompt = `
 You are StudySphere, a helpful study assistant.
 
 Subject: ${subject || "General"}
@@ -92,12 +92,12 @@ Use simple language.
 Give an example when useful.
 `;
 
-    const interaction = await ai.interactions.create({
+    const response = await ai.models.generateContent({
       model: "gemini-3.8-flash",
-      input
+      contents: prompt
     });
 
-    const answer = interaction.output_text;
+    const answer = response.text;
 
     if (!answer) {
       throw new Error("Gemini returned an empty answer");
