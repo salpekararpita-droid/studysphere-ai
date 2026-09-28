@@ -1,55 +1,37 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import "./App.css";
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:5000";
+const API_URL =
+  import.meta.env.VITE_API_URL ||
+  "https://studysphere-ai-s6iv.onrender.com";
 
 function App() {
   const [question, setQuestion] = useState("");
-  const [subject, setSubject] = useState("General");
+  const [subject, setSubject] = useState("");
   const [answer, setAnswer] = useState("");
-  const [questionLoading, setQuestionLoading] = useState(false);
-  const [questionError, setQuestionError] = useState("");
+  const [loadingAnswer, setLoadingAnswer] = useState(false);
+  const [answerError, setAnswerError] = useState("");
 
-  const [topic, setTopic] = useState("");
-  const [difficulty, setDifficulty] = useState("medium");
+  const [topic, setTopic] = useState("Python basics");
+  const [difficulty, setDifficulty] = useState("Easy");
   const [count, setCount] = useState(5);
-  const [quiz, setQuiz] = useState(null);
-  const [quizLoading, setQuizLoading] = useState(false);
+  const [quiz, setQuiz] = useState([]);
+  const [loadingQuiz, setLoadingQuiz] = useState(false);
   const [quizError, setQuizError] = useState("");
 
-  const [progress, setProgress] = useState(null);
-
-  useEffect(() => {
-    loadProgress();
-  }, []);
-
-  async function loadProgress() {
-    try {
-      const response = await fetch(`${API_URL}/api/progress`);
-
-      if (!response.ok) {
-        throw new Error("Unable to load progress.");
-      }
-
-      const data = await response.json();
-      setProgress(data);
-    } catch (error) {
-      console.error(error);
-    }
-  }
-
-  async function handleDoubtSubmit(event) {
+  async function askDoubt(event) {
     event.preventDefault();
 
-    setQuestionError("");
-    setAnswer("");
-
-    if (question.trim().length < 3) {
-      setQuestionError("Please enter a longer question.");
+    if (!question.trim()) {
+      setAnswerError("Please enter a question.");
       return;
     }
 
-    setQuestionLoading(true);
+    setLoadingAnswer(true);
+    setAnswerError("");
+    setAnswer("");
 
     try {
       const response = await fetch(`${API_URL}/api/ai/doubt`, {
@@ -58,38 +40,38 @@ function App() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          question,
-          subject
+          question: question.trim(),
+          subject: subject.trim() || "General"
         })
       });
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.message || "Unable to solve the doubt.");
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.details || data.message || "Unable to generate AI answer"
+        );
       }
 
-      setAnswer(data.answer);
-      await loadProgress();
+      setAnswer(data.answer || "No answer was returned.");
     } catch (error) {
-      setQuestionError(error.message);
+      setAnswerError(error.message || "Unable to generate AI answer");
     } finally {
-      setQuestionLoading(false);
+      setLoadingAnswer(false);
     }
   }
 
-  async function handleQuizSubmit(event) {
+  async function generateQuiz(event) {
     event.preventDefault();
 
-    setQuizError("");
-    setQuiz(null);
-
-    if (topic.trim().length < 2) {
-      setQuizError("Please enter a quiz topic.");
+    if (!topic.trim()) {
+      setQuizError("Please enter a topic.");
       return;
     }
 
-    setQuizLoading(true);
+    setLoadingQuiz(true);
+    setQuizError("");
+    setQuiz([]);
 
     try {
       const response = await fetch(`${API_URL}/api/ai/quiz`, {
@@ -98,7 +80,7 @@ function App() {
           "Content-Type": "application/json"
         },
         body: JSON.stringify({
-          topic,
+          topic: topic.trim(),
           difficulty,
           count: Number(count)
         })
@@ -106,156 +88,166 @@ function App() {
 
       const data = await response.json();
 
-      if (!response.ok) {
-        throw new Error(data.message || "Unable to generate quiz.");
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.details || data.message || "Unable to generate quiz"
+        );
       }
 
-      setQuiz(data);
-      await loadProgress();
+      setQuiz(Array.isArray(data.questions) ? data.questions : []);
     } catch (error) {
-      setQuizError(error.message);
+      setQuizError(error.message || "Unable to generate quiz");
     } finally {
-      setQuizLoading(false);
+      setLoadingQuiz(false);
     }
   }
 
   return (
     <main className="app-shell">
-      <header className="hero">
-        <p className="eyebrow">AI-powered learning</p>
-        <h1>StudySphere</h1>
-        <p className="hero-text">
-          Ask questions, generate quizzes, and track your learning progress.
-        </p>
+      <header className="app-header">
+        <div>
+          <p className="eyebrow">StudySphere</p>
+          <h1>Study Assistant</h1>
+          <p className="subtitle">
+            Ask questions, understand concepts, and practice with AI.
+          </p>
+        </div>
       </header>
 
-      <section className="stats-grid">
-        <div className="stat-card">
-          <strong>{progress?.totalSessions ?? 0}</strong>
-          <span>Total sessions</span>
-        </div>
-
-        <div className="stat-card">
-          <strong>{progress?.doubtCount ?? 0}</strong>
-          <span>Doubts solved</span>
-        </div>
-
-        <div className="stat-card">
-          <strong>{progress?.quizCount ?? 0}</strong>
-          <span>Quiz sessions</span>
-        </div>
-      </section>
-
-      <section className="content-grid">
-        <article className="panel">
-          <div className="panel-heading">
-            <p className="eyebrow">Study assistant</p>
+      <section className="card">
+        <div className="card-heading">
+          <div>
+            <p className="section-label">AI tutor</p>
             <h2>Ask a doubt</h2>
           </div>
+        </div>
 
-          <form onSubmit={handleDoubtSubmit}>
-            <label htmlFor="subject">Subject</label>
-            <input
-              id="subject"
-              value={subject}
-              onChange={(event) => setSubject(event.target.value)}
-              placeholder="e.g. Biology"
-            />
+        <form onSubmit={askDoubt} className="form">
+          <label htmlFor="subject">Subject</label>
+          <input
+            id="subject"
+            type="text"
+            placeholder="For example: Science"
+            value={subject}
+            onChange={(event) => setSubject(event.target.value)}
+          />
 
-            <label htmlFor="question">Your question</label>
-            <textarea
-              id="question"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              placeholder="What would you like to understand?"
-              rows="6"
-            />
+          <label htmlFor="question">Your question</label>
+          <textarea
+            id="question"
+            rows="5"
+            placeholder="Explain this..."
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+          />
 
-            <button type="submit" disabled={questionLoading}>
-              {questionLoading ? "Thinking..." : "Explain this"}
-            </button>
-          </form>
+          <button type="submit" disabled={loadingAnswer}>
+            {loadingAnswer ? "Generating answer..." : "Ask AI"}
+          </button>
+        </form>
 
-          {questionError && <p className="error">{questionError}</p>}
+        {answerError && (
+          <div className="error-box" role="alert">
+            {answerError}
+          </div>
+        )}
 
-          {answer && (
-            <div className="result-box">
-              <h3>Answer</h3>
-              <p className="answer-text">{answer}</p>
+        {answer && (
+          <article className="answer-box">
+            <h3>AI answer</h3>
+            <div className="ai-answer">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                {answer}
+              </ReactMarkdown>
             </div>
-          )}
-        </article>
+          </article>
+        )}
+      </section>
 
-        <article className="panel">
-          <div className="panel-heading">
-            <p className="eyebrow">Practice mode</p>
+      <section className="card">
+        <div className="card-heading">
+          <div>
+            <p className="section-label">Practice mode</p>
             <h2>Generate a quiz</h2>
           </div>
+        </div>
 
-          <form onSubmit={handleQuizSubmit}>
-            <label htmlFor="topic">Topic</label>
-            <input
-              id="topic"
-              value={topic}
-              onChange={(event) => setTopic(event.target.value)}
-              placeholder="e.g. JavaScript basics"
-            />
+        <form onSubmit={generateQuiz} className="form">
+          <label htmlFor="topic">Topic</label>
+          <input
+            id="topic"
+            type="text"
+            placeholder="For example: Python basics"
+            value={topic}
+            onChange={(event) => setTopic(event.target.value)}
+          />
 
-            <label htmlFor="difficulty">Difficulty</label>
-            <select
-              id="difficulty"
-              value={difficulty}
-              onChange={(event) => setDifficulty(event.target.value)}
-            >
-              <option value="easy">Easy</option>
-              <option value="medium">Medium</option>
-              <option value="hard">Hard</option>
-            </select>
+          <label htmlFor="difficulty">Difficulty</label>
+          <select
+            id="difficulty"
+            value={difficulty}
+            onChange={(event) => setDifficulty(event.target.value)}
+          >
+            <option value="Easy">Easy</option>
+            <option value="Medium">Medium</option>
+            <option value="Hard">Hard</option>
+          </select>
 
-            <label htmlFor="count">Questions</label>
-            <select
-              id="count"
-              value={count}
-              onChange={(event) => setCount(event.target.value)}
-            >
-              <option value="3">3</option>
-              <option value="5">5</option>
-              <option value="10">10</option>
-            </select>
+          <label htmlFor="count">Questions</label>
+          <select
+            id="count"
+            value={count}
+            onChange={(event) => setCount(event.target.value)}
+          >
+            <option value="3">3</option>
+            <option value="5">5</option>
+            <option value="10">10</option>
+          </select>
 
-            <button type="submit" disabled={quizLoading}>
-              {quizLoading ? "Creating..." : "Generate quiz"}
-            </button>
-          </form>
+          <button type="submit" disabled={loadingQuiz}>
+            {loadingQuiz ? "Generating quiz..." : "Generate quiz"}
+          </button>
+        </form>
 
-          {quizError && <p className="error">{quizError}</p>}
+        {quizError && (
+          <div className="error-box" role="alert">
+            {quizError}
+          </div>
+        )}
 
-          {quiz && (
-            <div className="result-box">
-              <h3>{quiz.title}</h3>
+        {quiz.length > 0 && (
+          <div className="quiz-list">
+            {quiz.map((item, index) => (
+              <article className="quiz-question" key={`${index}-${item.question}`}>
+                <h3>
+                  {index + 1}. {item.question}
+                </h3>
 
-              {quiz.questions.map((item, index) => (
-                <div className="quiz-question" key={`${item.question}-${index}`}>
-                  <strong>
-                    {index + 1}. {item.question}
-                  </strong>
-
-                  <ol type="A">
-                    {item.options.map((option) => (
-                      <li key={option}>{option}</li>
+                <div className="options">
+                  {Array.isArray(item.options) &&
+                    item.options.map((option, optionIndex) => (
+                      <div className="option" key={`${optionIndex}-${option}`}>
+                        <strong>{String.fromCharCode(65 + optionIndex)}.</strong>
+                        <span>{option}</span>
+                      </div>
                     ))}
-                  </ol>
-
-                  <p className="explanation">
-                    Answer: {item.options[item.answer]}
-                    <br />
-                    {item.explanation}
-                  </p>
                 </div>
-              ))}
-            </div>
-          )}
-        </article>
+
+                <p className="correct-answer">
+                  <strong>Answer:</strong> {item.answer}
+                </p>
+
+                {item.explanation && (
+                  <div className="explanation">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {item.explanation}
+                    </ReactMarkdown>
+                  </div>
+                )}
+              </article>
+            ))}
+          </div>
+        )}
       </section>
     </main>
   );
