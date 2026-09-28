@@ -4,246 +4,238 @@ import cors from "cors";
 import Groq from "groq-sdk";
 
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-const allowedOrigins = [
-  "https://studysphere-ai-salpe.vercel.app",
-  "https://studysphere-ai-salpe-git-main-salpekarpita-droid.vercel.app",
-  "https://studysphere-ai-salpe-pa2ngxmgu-salpekarpita-droid.vercel.app",
-  "http://localhost:5173",
-  "http://localhost:3000"
-];
+const PORT = process.env.PORT || 10000;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
-const groqApiKey = process.env.GROQ_API_KEY;
-
-const groq = groqApiKey
+const groq = GROQ_API_KEY
   ? new Groq({
-      apiKey: groqApiKey
+      apiKey: GROQ_API_KEY
     })
   : null;
 
 app.use(
   cors({
-    origin(origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        return callback(null, true);
-      }
-
-      return callback(new Error(`CORS blocked origin: ${origin}`));
-    },
-    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-    credentials: false
+    origin: true,
+    credentials: true
   })
 );
 
 app.use(express.json({ limit: "1mb" }));
 
 app.get("/", (req, res) => {
-  res.status(200).json({
+  res.json({
     success: true,
     message: "StudySphere backend is running"
   });
 });
 
-app.get("/api/health", (req, res) => {
+app.get("/health", (req, res) => {
   res.status(200).json({
     success: true,
-    message: "StudySphere API is running",
-    groqConfigured: Boolean(groqApiKey)
+    message: "StudySphere backend is healthy"
   });
 });
 
-app.get("/api/ai/test", async (req, res) => {
-  try {
-    if (!groq) {
-      return res.status(500).json({
-        success: false,
-        message: "GROQ_API_KEY is missing on Render"
-      });
-    }
-
-    const completion = await groq.chat.completions.create({
-      model: "openai/gpt-oss-20b",
-      messages: [
-        {
-          role: "user",
-          content: "Reply with exactly: Groq connection works"
-        }
-      ],
-      max_tokens: 50
-    });
-
-    const answer = completion.choices?.[0]?.message?.content || "";
-
-    return res.status(200).json({
-      success: true,
-      answer
-    });
-  } catch (error) {
-    console.error("Groq test error:", error);
-
-    return res.status(500).json({
+function requireGroq(res) {
+  if (!groq) {
+    res.status(500).json({
       success: false,
-      message: "Groq test failed",
-      details: error?.message || String(error),
-      status: error?.status || error?.statusCode || null
+      message: "Groq AI is not configured.",
+      details: "Add GROQ_API_KEY to your environment variables."
     });
-  }
-});
 
-app.get("/api/progress", (req, res) => {
-  res.status(200).json({
-    totalSessions: 0,
-    quizCount: 0,
-    doubtCount: 0,
-    topics: [],
-    recentSessions: []
-  });
-});
+    return false;
+  }
+
+  return true;
+}
+
+function getCompletionText(completion) {
+  return completion?.choices?.[0]?.message?.content || "";
+}
+
+function cleanQuizQuestions(questions) {
+  if (!Array.isArray(questions)) {
+    return [];
+  }
+
+  return questions
+    .map((item) => {
+      const options = Array.isArray(item?.options)
+        ? item.options.map((option) => String(option).trim())
+        : [];
+
+      return {
+        question: String(item?.question ?? "").trim(),
+        options,
+        answer: String(item?.answer ?? "").trim(),
+        explanation: String(item?.explanation ?? "").trim()
+      };
+    })
+    .filter(
+      (item) =>
+        item.question &&
+        item.options.length === 4 &&
+        item.options.every(Boolean) &&
+        item.answer &&
+        item.options.includes(item.answer) &&
+        item.explanation
+    );
+}
 
 app.post("/api/ai/doubt", async (req, res) => {
   try {
-    const { question, subject } = req.body;
+    if (!requireGroq(res)) return;
 
-    if (!question || typeof question !== "string") {
+    const question = String(req.body?.question ?? "").trim();
+    const subject = String(req.body?.subject ?? "General").trim();
+
+    if (!question) {
       return res.status(400).json({
         success: false,
-        message: "Question is required"
-      });
-    }
-
-    if (!groq) {
-      return res.status(500).json({
-        success: false,
-        message: "GROQ_API_KEY is missing on Render"
+        message: "Question is required."
       });
     }
 
     const completion = await groq.chat.completions.create({
-      model: "openai/gpt-oss-20b",
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.4,
       messages: [
         {
           role: "system",
           content:
-            "You are StudySphere, a helpful study assistant. Explain answers clearly with simple language and examples."
+            "You are a helpful study tutor. Explain concepts clearly using simple language. Use Markdown formatting when useful."
         },
         {
           role: "user",
-          content: `Subject: ${subject || "General"}\n\nStudent question:\n${question}`
+          content: `Subject: ${subject}\n\nStudent question:\n${question}`
         }
-      ],
-      temperature: 0.4,
-      max_tokens: 800
+      ]
     });
 
-    const answer = completion.choices?.[0]?.message?.content;
+    const answer = getCompletionText(completion).trim();
 
     if (!answer) {
-      throw new Error("Groq returned an empty answer");
+      throw new Error("Groq returned an empty answer.");
     }
 
-    return res.status(200).json({
+    return res.json({
       success: true,
       answer
     });
   } catch (error) {
-    console.error("Groq doubt error:", error);
+    console.error("Doubt endpoint error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to generate AI answer",
-      details: error?.message || String(error),
-      status: error?.status || error?.statusCode || null
+      message: "Unable to generate an answer.",
+      details: error?.message || "Unknown Groq error"
     });
   }
 });
 
 app.post("/api/ai/quiz", async (req, res) => {
   try {
-    const {
-      topic,
-      subject,
-      difficulty = "medium",
-      count = 5
-    } = req.body;
+    if (!requireGroq(res)) return;
 
-    if (!groq) {
-      return res.status(500).json({
+    const topic = String(req.body?.topic ?? "").trim();
+    const difficulty = String(
+      req.body?.difficulty ?? "Easy"
+    ).trim();
+
+    const requestedCount = Number(req.body?.count ?? 5);
+
+    const count = Math.min(
+      Math.max(
+        Number.isFinite(requestedCount) ? requestedCount : 5,
+        1
+      ),
+      10
+    );
+
+    if (!topic) {
+      return res.status(400).json({
         success: false,
-        message: "GROQ_API_KEY is missing on Render"
+        message: "Quiz topic is required."
       });
     }
 
-    const quizTopic = topic || subject || "General Knowledge";
-    const questionCount = Math.min(
-      Math.max(Number(count) || 5, 1),
-      20
-    );
+    const quizPrompt = `
+Create a multiple-choice quiz.
+
+Topic: ${topic}
+Difficulty: ${difficulty}
+Number of questions: ${count}
+
+Return ONLY valid JSON in exactly this structure:
+
+{
+  "success": true,
+  "questions": [
+    {
+      "question": "What is 2 + 2?",
+      "options": ["3", "4", "5", "6"],
+      "answer": "4",
+      "explanation": "Adding 2 and 2 gives 4."
+    }
+  ]
+}
+
+Rules:
+- Return exactly ${count} questions.
+- Each question must have exactly four different options.
+- The answer must exactly match the complete text of one option.
+- Do not use only A, B, C, or D as the answer.
+- Add a short explanation for every question.
+- Return no Markdown.
+- Return no code fences.
+- Return no text before or after the JSON.
+`;
 
     const completion = await groq.chat.completions.create({
-      model: "openai/gpt-oss-20b",
+      model: "llama-3.3-70b-versatile",
+      temperature: 0.3,
+      response_format: {
+        type: "json_object"
+      },
       messages: [
         {
           role: "system",
           content:
-            "You generate valid JSON only. Do not include markdown fences or extra text."
+            "You create educational quizzes. Always return valid JSON only."
         },
         {
           role: "user",
-          content: `
-Create exactly ${questionCount} multiple-choice quiz questions.
-
-Topic: ${quizTopic}
-Difficulty: ${difficulty}
-
-Return only this JSON:
-{
-  "questions": [
-    {
-      "question": "Question text",
-      "options": ["Option A", "Option B", "Option C", "Option D"],
-      "answer": "The exact correct option text",
-      "explanation": "Short explanation"
-    }
-  ]
-}
-`
+          content: quizPrompt
         }
-      ],
-      temperature: 0.2,
-      max_tokens: 2500,
-      response_format: {
-        type: "json_object"
-      }
+      ]
     });
 
-    const rawText = completion.choices?.[0]?.message?.content;
+    const content = getCompletionText(completion).trim();
 
-    if (!rawText) {
-      throw new Error("Groq returned an empty quiz response");
+    if (!content) {
+      throw new Error("Groq returned an empty quiz response.");
     }
 
-    const parsed = JSON.parse(rawText);
+    const parsed = JSON.parse(content);
+    const questions = cleanQuizQuestions(parsed?.questions);
 
-    if (!Array.isArray(parsed.questions)) {
-      throw new Error("Groq returned invalid quiz JSON");
+    if (questions.length === 0) {
+      throw new Error("Groq returned no valid quiz questions.");
     }
 
-    return res.status(200).json({
+    return res.json({
       success: true,
-      topic: quizTopic,
-      difficulty,
-      questions: parsed.questions
+      questions
     });
   } catch (error) {
-    console.error("Groq quiz error:", error);
+    console.error("Quiz endpoint error:", error);
 
     return res.status(500).json({
       success: false,
-      message: "Unable to generate quiz",
-      details: error?.message || String(error),
-      status: error?.status || error?.statusCode || null
+      message: "Unable to generate quiz.",
+      details: error?.message || "Unknown Groq error"
     });
   }
 });
@@ -251,23 +243,16 @@ Return only this JSON:
 app.use((req, res) => {
   res.status(404).json({
     success: false,
-    message: `Route not found: ${req.method} ${req.originalUrl}`
+    message: "Route not found."
   });
 });
 
 app.use((error, req, res, next) => {
   console.error("Server error:", error);
 
-  if (error.message?.startsWith("CORS blocked origin:")) {
-    return res.status(403).json({
-      success: false,
-      message: error.message
-    });
-  }
-
-  return res.status(500).json({
+  res.status(500).json({
     success: false,
-    message: "Internal server error"
+    message: "Internal server error."
   });
 });
 

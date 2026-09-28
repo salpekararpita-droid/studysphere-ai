@@ -186,49 +186,45 @@ h2 {
   color: #2945a4;
 }
 
-.ai-answer {
+.markdown-content {
   color: #263449;
   line-height: 1.7;
   overflow-wrap: anywhere;
 }
 
-.ai-answer p {
-  margin-bottom: 14px;
+.markdown-content p {
+  margin: 0 0 14px;
 }
 
-.ai-answer p:last-child {
+.markdown-content p:last-child {
   margin-bottom: 0;
 }
 
-.ai-answer strong {
+.markdown-content strong {
   color: #172b78;
   font-weight: 800;
 }
 
-.ai-answer em {
-  color: #40516b;
-}
-
-.ai-answer ul,
-.ai-answer ol {
+.markdown-content ul,
+.markdown-content ol {
   margin: 10px 0 16px;
   padding-left: 24px;
 }
 
-.ai-answer li {
+.markdown-content li {
   margin: 6px 0;
 }
 
-.ai-answer h1,
-.ai-answer h2,
-.ai-answer h3,
-.ai-answer h4 {
+.markdown-content h1,
+.markdown-content h2,
+.markdown-content h3,
+.markdown-content h4 {
   margin: 18px 0 8px;
   color: #172b78;
   font-size: 1.15rem;
 }
 
-.ai-answer blockquote {
+.markdown-content blockquote {
   margin: 14px 0;
   padding: 10px 15px;
   border-left: 4px solid #7890e8;
@@ -236,16 +232,15 @@ h2 {
   color: #475569;
 }
 
-.ai-answer code {
+.markdown-content code {
   padding: 2px 6px;
   border-radius: 6px;
   background: #e7ecf8;
   color: #283d88;
-  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-  font-size: 0.92em;
+  font-family: Consolas, monospace;
 }
 
-.ai-answer pre {
+.markdown-content pre {
   margin: 14px 0;
   padding: 16px;
   overflow-x: auto;
@@ -254,21 +249,32 @@ h2 {
   color: #e8eefc;
 }
 
-.ai-answer pre code {
+.markdown-content pre code {
   padding: 0;
   background: transparent;
   color: inherit;
 }
 
-.ai-answer a {
-  color: #365ccf;
-  font-weight: 700;
+.quiz-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-top: 24px;
+  padding: 14px 16px;
+  border: 1px solid #dbe5ff;
+  border-radius: 12px;
+  background: #f8faff;
+  color: #2945a4;
+}
+
+.quiz-summary strong {
+  color: #197044;
 }
 
 .quiz-list {
   display: grid;
   gap: 18px;
-  margin-top: 26px;
+  margin-top: 24px;
 }
 
 .quiz-question {
@@ -279,46 +285,116 @@ h2 {
 }
 
 .quiz-question h3 {
-  margin-bottom: 16px;
+  margin-bottom: 17px;
   color: #1e2d5c;
   line-height: 1.45;
 }
 
-.options {
+.quiz-options {
   display: grid;
-  gap: 9px;
-}
-
-.option {
-  display: flex;
   gap: 10px;
-  padding: 11px 13px;
-  border: 1px solid #e3e9f3;
-  border-radius: 10px;
+}
+
+.quiz-option {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 14px;
+  border: 1px solid #dbe3ef;
+  border-radius: 11px;
   background: #ffffff;
+  cursor: pointer;
   line-height: 1.45;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
 }
 
-.option strong {
-  min-width: 22px;
+.quiz-option:hover {
+  border-color: #4969d8;
+  background: #f8faff;
+  transform: translateY(-1px);
+}
+
+.quiz-option.selected {
+  border-color: #4969d8;
+  background: #eef2ff;
+}
+
+.quiz-option input {
+  width: 17px;
+  height: 17px;
+  accent-color: #4969d8;
+}
+
+.quiz-option input:disabled {
+  cursor: not-allowed;
+}
+
+.option-letter {
+  min-width: 24px;
   color: #4969d8;
+  font-weight: 800;
 }
 
-.correct-answer {
-  margin: 17px 0 8px;
-  color: #197044;
-}
-
-.explanation {
-  padding: 12px 14px;
+.check-button {
+  min-height: 42px;
+  margin-top: 16px;
+  padding: 0 18px;
   border-radius: 10px;
-  background: #f1f8f4;
-  color: #365347;
+  background: #4969d8;
+  color: #ffffff;
+  font-weight: 800;
+}
+
+.check-button:hover:not(:disabled) {
+  background: #3857c5;
+}
+
+.check-button:disabled {
+  background: #aab6d8;
+}
+
+.question-correct {
+  border-color: #8bd3a9;
+  background: #f5fff8;
+}
+
+.question-wrong {
+  border-color: #f2a4a4;
+  background: #fff8f8;
+}
+
+.result-box {
+  margin-top: 17px;
+  padding: 14px 16px;
+  border-radius: 11px;
   line-height: 1.55;
 }
 
-.explanation p {
-  margin-bottom: 0;
+.result-box p {
+  margin: 8px 0 0;
+}
+
+.result-correct {
+  border: 1px solid #8bd3a9;
+  background: #eafaf0;
+  color: #17643a;
+}
+
+.result-wrong {
+  border: 1px solid #f2a4a4;
+  background: #fff0f0;
+  color: #a32929;
+}
+
+.explanation {
+  margin-top: 10px;
+}
+
+.explanation .markdown-content {
+  color: inherit;
 }
 
 @media (max-width: 640px) {
@@ -334,5 +410,11 @@ h2 {
 
   h1 {
     font-size: 2.25rem;
+  }
+
+  .quiz-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 7px;
   }
 }

@@ -7,13 +7,11 @@ const API_URL =
   import.meta.env.VITE_API_URL ||
   "https://studysphere-ai-s6iv.onrender.com";
 
-function MarkdownAnswer({ content }) {
-  if (!content) {
-    return null;
-  }
+function MarkdownContent({ content }) {
+  if (!content) return null;
 
   return (
-    <div className="ai-answer">
+    <div className="markdown-content">
       <ReactMarkdown remarkPlugins={[remarkGfm]}>
         {String(content)}
       </ReactMarkdown>
@@ -31,7 +29,10 @@ function App() {
   const [topic, setTopic] = useState("Python basics");
   const [difficulty, setDifficulty] = useState("Easy");
   const [count, setCount] = useState("5");
+
   const [quiz, setQuiz] = useState([]);
+  const [selectedAnswers, setSelectedAnswers] = useState({});
+  const [checkedAnswers, setCheckedAnswers] = useState({});
   const [quizError, setQuizError] = useState("");
   const [loadingQuiz, setLoadingQuiz] = useState(false);
 
@@ -64,7 +65,7 @@ function App() {
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || data?.success === false) {
         throw new Error(
           data?.details ||
             data?.message ||
@@ -72,24 +73,11 @@ function App() {
         );
       }
 
-      if (data?.success === false) {
-        throw new Error(
-          data?.details || data?.message || "The AI could not answer the question."
-        );
-      }
-
-      const returnedAnswer =
-        data?.answer ||
-        data?.response ||
-        data?.content ||
-        data?.result ||
-        "";
-
-      if (!returnedAnswer) {
+      if (!data?.answer) {
         throw new Error("The server returned an empty answer.");
       }
 
-      setAnswer(String(returnedAnswer));
+      setAnswer(String(data.answer));
     } catch (error) {
       setAnswerError(
         error?.message || "Unable to connect to the AI service."
@@ -112,6 +100,8 @@ function App() {
     setLoadingQuiz(true);
     setQuizError("");
     setQuiz([]);
+    setSelectedAnswers({});
+    setCheckedAnswers({});
 
     try {
       const response = await fetch(`${API_URL}/api/ai/quiz`, {
@@ -128,7 +118,7 @@ function App() {
 
       const data = await response.json();
 
-      if (!response.ok) {
+      if (!response.ok || data?.success === false) {
         throw new Error(
           data?.details ||
             data?.message ||
@@ -136,23 +126,11 @@ function App() {
         );
       }
 
-      if (data?.success === false) {
-        throw new Error(
-          data?.details || data?.message || "The quiz could not be generated."
-        );
-      }
-
-      const questions =
-        data?.questions ||
-        data?.quiz ||
-        data?.data ||
-        [];
-
-      if (!Array.isArray(questions) || questions.length === 0) {
+      if (!Array.isArray(data?.questions) || data.questions.length === 0) {
         throw new Error("The server returned no quiz questions.");
       }
 
-      setQuiz(questions);
+      setQuiz(data.questions);
     } catch (error) {
       setQuizError(
         error?.message || "Unable to connect to the AI service."
@@ -161,6 +139,36 @@ function App() {
       setLoadingQuiz(false);
     }
   }
+
+  function selectAnswer(questionIndex, option) {
+    if (checkedAnswers[questionIndex]) return;
+
+    setSelectedAnswers((previous) => ({
+      ...previous,
+      [questionIndex]: option
+    }));
+  }
+
+  function checkAnswer(questionIndex) {
+    if (!selectedAnswers[questionIndex]) return;
+
+    setCheckedAnswers((previous) => ({
+      ...previous,
+      [questionIndex]: true
+    }));
+  }
+
+  function isCorrect(questionIndex) {
+    return (
+      selectedAnswers[questionIndex] === quiz[questionIndex]?.answer
+    );
+  }
+
+  const checkedCount = Object.keys(checkedAnswers).length;
+
+  const score = quiz.reduce((total, item, index) => {
+    return total + (isCorrect(index) ? 1 : 0);
+  }, 0);
 
   return (
     <main className="app-shell">
@@ -215,7 +223,7 @@ function App() {
         {answer && (
           <article className="answer-box">
             <h3>AI answer</h3>
-            <MarkdownAnswer content={answer} />
+            <MarkdownContent content={answer} />
           </article>
         )}
       </section>
@@ -224,7 +232,7 @@ function App() {
         <div className="card-heading">
           <div>
             <p className="section-label">Practice mode</p>
-            <h2>Generate a quiz</h2>
+            <h2>Take a quiz</h2>
           </div>
         </div>
 
@@ -275,61 +283,104 @@ function App() {
         )}
 
         {quiz.length > 0 && (
+          <div className="quiz-summary">
+            <span>
+              Checked: {checkedCount} / {quiz.length}
+            </span>
+
+            {checkedCount === quiz.length && (
+              <strong>
+                Score: {score} / {quiz.length}
+              </strong>
+            )}
+          </div>
+        )}
+
+        {quiz.length > 0 && (
           <div className="quiz-list">
             {quiz.map((item, index) => {
-              const questionText =
-                item?.question || item?.prompt || `Question ${index + 1}`;
-
-              const options = Array.isArray(item?.options)
-                ? item.options
-                : Array.isArray(item?.choices)
-                  ? item.choices
-                  : [];
-
-              const correctAnswer =
-                item?.answer ||
-                item?.correctAnswer ||
-                item?.correct_answer ||
-                "";
-
-              const explanation =
-                item?.explanation || item?.reason || "";
+              const selectedAnswer = selectedAnswers[index];
+              const isChecked = checkedAnswers[index];
+              const correct = isCorrect(index);
 
               return (
                 <article
-                  className="quiz-question"
-                  key={`${index}-${questionText}`}
+                  className={`quiz-question ${
+                    isChecked
+                      ? correct
+                        ? "question-correct"
+                        : "question-wrong"
+                      : ""
+                  }`}
+                  key={`${index}-${item.question}`}
                 >
                   <h3>
-                    {index + 1}. {questionText}
+                    {index + 1}. {item.question}
                   </h3>
 
-                  {options.length > 0 && (
-                    <div className="options">
-                      {options.map((option, optionIndex) => (
-                        <div
-                          className="option"
-                          key={`${optionIndex}-${String(option)}`}
+                  <div className="quiz-options">
+                    {item.options.map((option, optionIndex) => {
+                      const isSelected = selectedAnswer === option;
+
+                      return (
+                        <label
+                          className={`quiz-option ${
+                            isSelected ? "selected" : ""
+                          }`}
+                          key={`${index}-${optionIndex}-${option}`}
                         >
-                          <strong>
+                          <input
+                            type="radio"
+                            name={`question-${index}`}
+                            value={option}
+                            checked={isSelected}
+                            disabled={isChecked}
+                            onChange={() =>
+                              selectAnswer(index, option)
+                            }
+                          />
+
+                          <span className="option-letter">
                             {String.fromCharCode(65 + optionIndex)}.
-                          </strong>
+                          </span>
 
-                          <span>{String(option)}</span>
-                        </div>
-                      ))}
-                    </div>
+                          <span>{option}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+
+                  {!isChecked && (
+                    <button
+                      type="button"
+                      className="check-button"
+                      disabled={!selectedAnswer}
+                      onClick={() => checkAnswer(index)}
+                    >
+                      Check answer
+                    </button>
                   )}
 
-                  {correctAnswer && (
-                    <p className="correct-answer">
-                      <strong>Answer:</strong> {String(correctAnswer)}
-                    </p>
-                  )}
+                  {isChecked && (
+                    <div
+                      className={`result-box ${
+                        correct ? "result-correct" : "result-wrong"
+                      }`}
+                    >
+                      <strong>
+                        {correct ? "Correct!" : "Wrong answer"}
+                      </strong>
 
-                  {explanation && (
-                    <div className="explanation">
-                      <MarkdownAnswer content={String(explanation)} />
+                      {!correct && (
+                        <p>
+                          Correct answer:{" "}
+                          <strong>{item.answer}</strong>
+                        </p>
+                      )}
+
+                      <div className="explanation">
+                        <MarkdownContent content={item.explanation} />
+                      </div>
                     </div>
                   )}
                 </article>
