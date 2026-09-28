@@ -8,8 +8,8 @@ const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
   "https://studysphere-ai-salpe.vercel.app",
-  "https://studysphere-ai-salpe-git-main-salpekararpita-droid.vercel.app",
-  "https://studysphere-ai-salpe-pa2ngxmgu-salpekararpita-droid.vercel.app",
+  "https://studysphere-ai-salpe-git-main-salpekarpita-droid.vercel.app",
+  "https://studysphere-ai-salpe-pa2ngxmgu-salpekarpita-droid.vercel.app",
   "http://localhost:5173",
   "http://localhost:3000"
 ];
@@ -54,6 +54,44 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+app.get("/api/ai/test", async (req, res) => {
+  try {
+    if (!groq) {
+      return res.status(500).json({
+        success: false,
+        message: "GROQ_API_KEY is missing on Render"
+      });
+    }
+
+    const completion = await groq.chat.completions.create({
+      model: "openai/gpt-oss-20b",
+      messages: [
+        {
+          role: "user",
+          content: "Reply with exactly: Groq connection works"
+        }
+      ],
+      max_tokens: 50
+    });
+
+    const answer = completion.choices?.[0]?.message?.content || "";
+
+    return res.status(200).json({
+      success: true,
+      answer
+    });
+  } catch (error) {
+    console.error("Groq test error:", error);
+
+    return res.status(500).json({
+      success: false,
+      message: "Groq test failed",
+      details: error?.message || String(error),
+      status: error?.status || error?.statusCode || null
+    });
+  }
+});
+
 app.get("/api/progress", (req, res) => {
   res.status(200).json({
     totalSessions: 0,
@@ -83,12 +121,12 @@ app.post("/api/ai/doubt", async (req, res) => {
     }
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-20b",
       messages: [
         {
           role: "system",
           content:
-            "You are StudySphere, a helpful study assistant. Explain concepts clearly using simple language and examples."
+            "You are StudySphere, a helpful study assistant. Explain answers clearly with simple language and examples."
         },
         {
           role: "user",
@@ -115,7 +153,8 @@ app.post("/api/ai/doubt", async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Unable to generate AI answer",
-      details: error?.message || String(error)
+      details: error?.message || String(error),
+      status: error?.status || error?.statusCode || null
     });
   }
 });
@@ -143,12 +182,12 @@ app.post("/api/ai/quiz", async (req, res) => {
     );
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-20b",
       messages: [
         {
           role: "system",
           content:
-            "You generate valid JSON only. Never use markdown fences."
+            "You generate valid JSON only. Do not include markdown fences or extra text."
         },
         {
           role: "user",
@@ -158,7 +197,7 @@ Create exactly ${questionCount} multiple-choice quiz questions.
 Topic: ${quizTopic}
 Difficulty: ${difficulty}
 
-Return ONLY this JSON structure:
+Return only this JSON:
 {
   "questions": [
     {
@@ -203,7 +242,8 @@ Return ONLY this JSON structure:
     return res.status(500).json({
       success: false,
       message: "Unable to generate quiz",
-      details: error?.message || String(error)
+      details: error?.message || String(error),
+      status: error?.status || error?.statusCode || null
     });
   }
 });
