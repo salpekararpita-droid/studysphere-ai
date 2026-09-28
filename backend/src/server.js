@@ -99,7 +99,7 @@ app.post("/api/ai/doubt", async (req, res) => {
     }
 
     const completion = await groq.chat.completions.create({
-      model: "llama-3.3-70b-versatile",
+      model: "openai/gpt-oss-120b",
       temperature: 0.4,
       messages: [
         {
