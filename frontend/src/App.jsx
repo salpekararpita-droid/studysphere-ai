@@ -26,7 +26,7 @@ function App() {
   const [answerError, setAnswerError] = useState("");
   const [loadingAnswer, setLoadingAnswer] = useState(false);
 
-  const [topic, setTopic] = useState("Python basics");
+  const [topic, setTopic] = useState(" ");
   const [difficulty, setDifficulty] = useState("Easy");
   const [count, setCount] = useState("5");
 
@@ -242,7 +242,7 @@ function App() {
           <input
             id="topic"
             type="text"
-            placeholder="For example: Python basics"
+            placeholder="Enter a topic for the quiz"
             value={topic}
             onChange={(event) => setTopic(event.target.value)}
           />
