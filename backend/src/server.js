@@ -23,6 +23,12 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
+console.log({
+  supabaseUrl: process.env.SUPABASE_URL,
+  hasSupabaseSecretKey: Boolean(
+    process.env.SUPABASE_SECRET_KEY
+  )
+}); 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY,
