@@ -5,82 +5,123 @@ import "./App.css";
 
 const API_URL =
   import.meta.env.VITE_API_URL ||
-  "https://studysphere-ai-s6iv.onrender.com";
+  "http://localhost:10000";
+
+function getSessionId() {
+  let sessionId = localStorage.getItem(
+    "studysphere_session_id"
+  );
+
+  if (!sessionId) {
+    sessionId = crypto.randomUUID();
+
+    localStorage.setItem(
+      "studysphere_session_id",
+      sessionId
+    );
+  }
+
+  return sessionId;
+}
 
 function MarkdownContent({ content }) {
-  if (!content) return null;
-
   return (
-    <div className="markdown-content">
-      <ReactMarkdown remarkPlugins={[remarkGfm]}>
-        {String(content)}
-      </ReactMarkdown>
-    </div>
+    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+      {content || ""}
+    </ReactMarkdown>
   );
 }
 
+function formatDate(value) {
+  if (!value) {
+    return "";
+  }
+
+  return new Date(value).toLocaleString();
+}
+
 function App() {
+  const [sessionId] = useState(getSessionId);
+
   const [question, setQuestion] = useState("");
   const [subject, setSubject] = useState("");
   const [answer, setAnswer] = useState("");
-  const [answerError, setAnswerError] = useState("");
-  const [loadingAnswer, setLoadingAnswer] = useState(false);
+  const [doubtError, setDoubtError] = useState("");
+  const [loadingAnswer, setLoadingAnswer] =
+    useState(false);
 
-  const [topic, setTopic] = useState(" ");
-  const [difficulty, setDifficulty] = useState("Easy");
-  const [count, setCount] = useState("5");
+  const [topic, setTopic] = useState("");
+  const [difficulty, setDifficulty] =
+    useState("Easy");
+  const [count, setCount] = useState(5);
 
   const [quiz, setQuiz] = useState([]);
-  const [selectedAnswers, setSelectedAnswers] = useState({});
-  const [checkedAnswers, setCheckedAnswers] = useState({});
+  const [quizId, setQuizId] = useState("");
+  const [selectedAnswers, setSelectedAnswers] =
+    useState({});
+  const [checkedAnswers, setCheckedAnswers] =
+    useState({});
   const [quizError, setQuizError] = useState("");
-  const [loadingQuiz, setLoadingQuiz] = useState(false);
+  const [loadingQuiz, setLoadingQuiz] =
+    useState(false);
+
+  const [previousDoubts, setPreviousDoubts] =
+    useState([]);
+  const [previousQuizzes, setPreviousQuizzes] =
+    useState([]);
+  const [historyTab, setHistoryTab] =
+    useState("doubts");
+  const [historyError, setHistoryError] =
+    useState("");
+  const [historyLoading, setHistoryLoading] =
+    useState(false);
 
   async function askDoubt(event) {
     event.preventDefault();
 
     const cleanQuestion = question.trim();
-    const cleanSubject = subject.trim() || "General";
+    const cleanSubject =
+      subject.trim() || "General";
 
     if (!cleanQuestion) {
-      setAnswerError("Please enter a question.");
+      setDoubtError("Please enter a question.");
       return;
     }
 
     setLoadingAnswer(true);
-    setAnswerError("");
+    setDoubtError("");
     setAnswer("");
 
     try {
-      const response = await fetch(`${API_URL}/api/ai/doubt`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          question: cleanQuestion,
-          subject: cleanSubject
-        })
-      });
+      const response = await fetch(
+        `${API_URL}/api/ai/doubt`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            question: cleanQuestion,
+            subject: cleanSubject,
+            sessionId
+          })
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok || data?.success === false) {
         throw new Error(
-          data?.details ||
-            data?.message ||
-            `Request failed with status ${response.status}`
+          data?.message ||
+            "Unable to generate an answer."
         );
       }
 
-      if (!data?.answer) {
-        throw new Error("The server returned an empty answer.");
-      }
-
-      setAnswer(String(data.answer));
+      setAnswer(data.answer || "");
     } catch (error) {
-      setAnswerError(
-        error?.message || "Unable to connect to the AI service."
+      setDoubtError(
+        error?.message ||
+          "Unable to connect to the backend."
       );
     } finally {
       setLoadingAnswer(false);
@@ -100,40 +141,42 @@ function App() {
     setLoadingQuiz(true);
     setQuizError("");
     setQuiz([]);
+    setQuizId("");
     setSelectedAnswers({});
     setCheckedAnswers({});
 
     try {
-      const response = await fetch(`${API_URL}/api/ai/quiz`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          topic: cleanTopic,
-          difficulty,
-          count: Number(count)
-        })
-      });
+      const response = await fetch(
+        `${API_URL}/api/ai/quiz`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            topic: cleanTopic,
+            difficulty,
+            count: Number(count),
+            sessionId
+          })
+        }
+      );
 
       const data = await response.json();
 
       if (!response.ok || data?.success === false) {
         throw new Error(
-          data?.details ||
-            data?.message ||
-            `Request failed with status ${response.status}`
+          data?.message ||
+            "Unable to generate the quiz."
         );
       }
 
-      if (!Array.isArray(data?.questions) || data.questions.length === 0) {
-        throw new Error("The server returned no quiz questions.");
-      }
-
-      setQuiz(data.questions);
+      setQuizId(data.quizId || "");
+      setQuiz(data.questions || []);
     } catch (error) {
       setQuizError(
-        error?.message || "Unable to connect to the AI service."
+        error?.message ||
+          "Unable to connect to the backend."
       );
     } finally {
       setLoadingQuiz(false);
@@ -141,7 +184,9 @@ function App() {
   }
 
   function selectAnswer(questionIndex, option) {
-    if (checkedAnswers[questionIndex]) return;
+    if (checkedAnswers[questionIndex]) {
+      return;
+    }
 
     setSelectedAnswers((previous) => ({
       ...previous,
@@ -150,8 +195,6 @@ function App() {
   }
 
   function checkAnswer(questionIndex) {
-    if (!selectedAnswers[questionIndex]) return;
-
     setCheckedAnswers((previous) => ({
       ...previous,
       [questionIndex]: true
@@ -160,69 +203,204 @@ function App() {
 
   function isCorrect(questionIndex) {
     return (
-      selectedAnswers[questionIndex] === quiz[questionIndex]?.answer
+      selectedAnswers[questionIndex] ===
+      quiz[questionIndex]?.answer
     );
   }
 
-  const checkedCount = Object.keys(checkedAnswers).length;
+  const checkedCount =
+    Object.keys(checkedAnswers).length;
 
-  const score = quiz.reduce((total, item, index) => {
-    return total + (isCorrect(index) ? 1 : 0);
-  }, 0);
+  const score = quiz.reduce(
+    (total, item, index) => {
+      if (
+        checkedAnswers[index] &&
+        selectedAnswers[index] === item.answer
+      ) {
+        return total + 1;
+      }
+
+      return total;
+    },
+    0
+  );
+
+  async function saveQuizResult() {
+    if (
+      !quizId ||
+      quiz.length === 0 ||
+      checkedCount !== quiz.length
+    ) {
+      return;
+    }
+
+    try {
+      const answers = quiz.map((item, index) => ({
+        questionId: item.id,
+        selectedAnswer:
+          selectedAnswers[index] || "",
+        isCorrect:
+          selectedAnswers[index] === item.answer
+      }));
+
+      await fetch(
+        `${API_URL}/api/ai/quiz/${quizId}/result`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({
+            sessionId,
+            score,
+            totalQuestions: quiz.length,
+            answers
+          })
+        }
+      );
+    } catch (error) {
+      console.error(
+        "Unable to save quiz result:",
+        error
+      );
+    }
+  }
+
+  async function loadDoubtHistory() {
+    setHistoryTab("doubts");
+    setHistoryLoading(true);
+    setHistoryError("");
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/history/doubts?sessionId=${encodeURIComponent(
+          sessionId
+        )}`
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || data?.success === false) {
+        throw new Error(
+          data?.message ||
+            "Unable to load previous doubts."
+        );
+      }
+
+      setPreviousDoubts(data.doubts || []);
+    } catch (error) {
+      setHistoryError(
+        error?.message ||
+          "Unable to load previous doubts."
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function loadQuizHistory() {
+    setHistoryTab("quizzes");
+    setHistoryLoading(true);
+    setHistoryError("");
+
+    try {
+      const response = await fetch(
+        `${API_URL}/api/history/quizzes?sessionId=${encodeURIComponent(
+          sessionId
+        )}`
+      );
+
+      const data = await response.json();
+
+      if (!response.ok || data?.success === false) {
+        throw new Error(
+          data?.message ||
+            "Unable to load previous quizzes."
+        );
+      }
+
+      setPreviousQuizzes(data.quizzes || []);
+    } catch (error) {
+      setHistoryError(
+        error?.message ||
+          "Unable to load previous quizzes."
+      );
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
 
   return (
     <main className="app-shell">
-      <header className="app-header">
-        <p className="eyebrow">StudySphere</p>
-        <h1>Study Assistant</h1>
-        <p className="subtitle">
-          Ask questions, understand concepts, and practice with AI.
+      <header className="hero">
+        <p className="eyebrow">AI learning companion</p>
+        <h1>StudySphere AI</h1>
+        <p className="hero-text">
+          Ask questions, generate quizzes, and review
+          your learning history.
         </p>
       </header>
 
       <section className="card">
         <div className="card-heading">
           <div>
-            <p className="section-label">AI tutor</p>
-            <h2>Ask a doubt</h2>
+            <p className="section-label">
+              Ask your tutor
+            </p>
+            <h2>Clear your doubts</h2>
           </div>
         </div>
 
-        <form className="form" onSubmit={askDoubt}>
-          <label htmlFor="subject">Subject</label>
+        <form onSubmit={askDoubt}>
+          <label htmlFor="subject">
+            Subject
+          </label>
 
           <input
             id="subject"
-            type="text"
-            placeholder="For example: Science"
             value={subject}
-            onChange={(event) => setSubject(event.target.value)}
+            onChange={(event) =>
+              setSubject(event.target.value)
+            }
+            placeholder="For example: Biology"
           />
 
-          <label htmlFor="question">Your question</label>
+          <label htmlFor="question">
+            Your question
+          </label>
 
           <textarea
             id="question"
-            rows="6"
-            placeholder="Explain this..."
             value={question}
-            onChange={(event) => setQuestion(event.target.value)}
+            onChange={(event) =>
+              setQuestion(event.target.value)
+            }
+            placeholder="Ask an academic question..."
+            rows={5}
           />
 
-          <button type="submit" disabled={loadingAnswer}>
-            {loadingAnswer ? "Generating answer..." : "Ask AI"}
+          <button
+            type="submit"
+            disabled={loadingAnswer}
+          >
+            {loadingAnswer
+              ? "Generating..."
+              : "Ask AI"}
           </button>
         </form>
 
-        {answerError && (
-          <div className="error-box" role="alert">
-            {answerError}
+        {doubtError && (
+          <div className="error-box">
+            {doubtError}
           </div>
         )}
 
         {answer && (
           <article className="answer-box">
-            <h3>AI answer</h3>
+            <p className="section-label">
+              AI explanation
+            </p>
+
             <MarkdownContent content={answer} />
           </article>
         )}
@@ -231,118 +409,127 @@ function App() {
       <section className="card">
         <div className="card-heading">
           <div>
-            <p className="section-label">Practice mode</p>
-            <h2>Take a quiz</h2>
+            <p className="section-label">
+              Practice
+            </p>
+            <h2>Generate a quiz</h2>
           </div>
         </div>
 
-        <form className="form" onSubmit={generateQuiz}>
-          <label htmlFor="topic">Topic</label>
+        <form onSubmit={generateQuiz}>
+          <label htmlFor="topic">
+            Topic
+          </label>
 
           <input
             id="topic"
-            type="text"
-            placeholder="Enter a topic for the quiz"
             value={topic}
-            onChange={(event) => setTopic(event.target.value)}
+            onChange={(event) =>
+              setTopic(event.target.value)
+            }
+            placeholder="For example: JavaScript basics"
           />
 
-          <label htmlFor="difficulty">Difficulty</label>
+          <div className="form-grid">
+            <div>
+              <label htmlFor="difficulty">
+                Difficulty
+              </label>
 
-          <select
-            id="difficulty"
-            value={difficulty}
-            onChange={(event) => setDifficulty(event.target.value)}
+              <select
+                id="difficulty"
+                value={difficulty}
+                onChange={(event) =>
+                  setDifficulty(event.target.value)
+                }
+              >
+                <option value="Easy">Easy</option>
+                <option value="Medium">Medium</option>
+                <option value="Hard">Hard</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="count">
+                Questions
+              </label>
+
+              <select
+                id="count"
+                value={count}
+                onChange={(event) =>
+                  setCount(Number(event.target.value))
+                }
+              >
+                <option value={5}>5</option>
+                <option value={10}>10</option>
+                <option value={15}>15</option>
+                <option value={20}>20</option>
+              </select>
+            </div>
+          </div>
+
+          <button
+            type="submit"
+            disabled={loadingQuiz}
           >
-            <option value="Easy">Easy</option>
-            <option value="Medium">Medium</option>
-            <option value="Hard">Hard</option>
-          </select>
-
-          <label htmlFor="count">Number of questions</label>
-
-          <select
-            id="count"
-            value={count}
-            onChange={(event) => setCount(event.target.value)}
-          >
-            <option value="3">3</option>
-            <option value="5">5</option>
-            <option value="10">10</option>
-          </select>
-
-          <button type="submit" disabled={loadingQuiz}>
-            {loadingQuiz ? "Generating quiz..." : "Generate quiz"}
+            {loadingQuiz
+              ? "Generating..."
+              : "Generate quiz"}
           </button>
         </form>
 
         {quizError && (
-          <div className="error-box" role="alert">
+          <div className="error-box">
             {quizError}
-          </div>
-        )}
-
-        {quiz.length > 0 && (
-          <div className="quiz-summary">
-            <span>
-              Checked: {checkedCount} / {quiz.length}
-            </span>
-
-            {checkedCount === quiz.length && (
-              <strong>
-                Score: {score} / {quiz.length}
-              </strong>
-            )}
           </div>
         )}
 
         {quiz.length > 0 && (
           <div className="quiz-list">
             {quiz.map((item, index) => {
-              const selectedAnswer = selectedAnswers[index];
-              const isChecked = checkedAnswers[index];
-              const correct = isCorrect(index);
+              const hasBeenChecked =
+                Boolean(checkedAnswers[index]);
 
               return (
                 <article
-                  className={`quiz-question ${
-                    isChecked
-                      ? correct
-                        ? "question-correct"
-                        : "question-wrong"
-                      : ""
-                  }`}
-                  key={`${index}-${item.question}`}
+                  className="quiz-question"
+                  key={item.id || index}
                 >
-                  <h3>
-                    {index + 1}. {item.question}
-                  </h3>
+                  <p className="question-number">
+                    Question {index + 1}
+                  </p>
 
-                  <div className="quiz-options">
-                    {item.options.map((option, optionIndex) => {
-                      const isSelected = selectedAnswer === option;
+                  <h3>{item.question}</h3>
+
+                  <div className="options">
+                    {item.options.map((option) => {
+                      const isSelected =
+                        selectedAnswers[index] ===
+                        option;
 
                       return (
                         <label
-                          className={`quiz-option ${
-                            isSelected ? "selected" : ""
-                          }`}
-                          key={`${index}-${optionIndex}-${option}`}
+                          className={
+                            isSelected
+                              ? "option selected"
+                              : "option"
+                          }
+                          key={option}
                         >
                           <input
                             type="radio"
                             name={`question-${index}`}
                             value={option}
                             checked={isSelected}
-                            disabled={isChecked}
+                            disabled={hasBeenChecked}
                             onChange={() =>
-                              selectAnswer(index, option)
+                              selectAnswer(
+                                index,
+                                option
+                              )
                             }
                           />
-
-                          <span className="option-letter">
-                            {String.fromCharCode(65 + optionIndex)}.
-                          </span>
 
                           <span>{option}</span>
                         </label>
@@ -350,37 +537,41 @@ function App() {
                     })}
                   </div>
 
-                  {!isChecked && (
-                    <button
-                      type="button"
-                      className="check-button"
-                      disabled={!selectedAnswer}
-                      onClick={() => checkAnswer(index)}
-                    >
-                      Check answer
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    disabled={
+                      !selectedAnswers[index] ||
+                      hasBeenChecked
+                    }
+                    onClick={() =>
+                      checkAnswer(index)
+                    }
+                  >
+                    {hasBeenChecked
+                      ? "Answer checked"
+                      : "Check answer"}
+                  </button>
 
-                  {isChecked && (
+                  {hasBeenChecked && (
                     <div
-                      className={`result-box ${
-                        correct ? "result-correct" : "result-wrong"
-                      }`}
+                      className={
+                        isCorrect(index)
+                          ? "result correct"
+                          : "result incorrect"
+                      }
                     >
                       <strong>
-                        {correct ? "Correct!" : "Wrong answer"}
+                        {isCorrect(index)
+                          ? "Correct!"
+                          : "Wrong answer"}
                       </strong>
 
-                      {!correct && (
-                        <p>
-                          Correct answer:{" "}
-                          <strong>{item.answer}</strong>
-                        </p>
-                      )}
+                      <p>
+                        Correct answer:{" "}
+                        {item.answer}
+                      </p>
 
-                      <div className="explanation">
-                        <MarkdownContent content={item.explanation} />
-                      </div>
+                      <p>{item.explanation}</p>
                     </div>
                   )}
                 </article>
@@ -388,6 +579,191 @@ function App() {
             })}
           </div>
         )}
+
+        {quiz.length > 0 && (
+          <div className="score-box">
+            <p>
+              Checked: {checkedCount} /{" "}
+              {quiz.length}
+            </p>
+
+            <p>
+              Current score: {score} /{" "}
+              {quiz.length}
+            </p>
+
+            {checkedCount === quiz.length && (
+              <>
+                <p>
+                  Percentage:{" "}
+                  {Math.round(
+                    (score / quiz.length) * 100
+                  )}
+                  %
+                </p>
+
+                <button
+                  type="button"
+                  onClick={saveQuizResult}
+                >
+                  Save final result
+                </button>
+              </>
+            )}
+          </div>
+        )}
+      </section>
+
+      <section className="card history-card">
+        <div className="card-heading">
+          <div>
+            <p className="section-label">
+              Database history
+            </p>
+            <h2>Previous activity</h2>
+          </div>
+        </div>
+
+        <div className="history-tabs">
+          <button
+            type="button"
+            className={
+              historyTab === "doubts"
+                ? "history-tab active"
+                : "history-tab"
+            }
+            onClick={loadDoubtHistory}
+          >
+            Previous doubts
+          </button>
+
+          <button
+            type="button"
+            className={
+              historyTab === "quizzes"
+                ? "history-tab active"
+                : "history-tab"
+            }
+            onClick={loadQuizHistory}
+          >
+            Previous quizzes
+          </button>
+        </div>
+
+        {historyLoading && (
+          <p className="history-message">
+            Loading history...
+          </p>
+        )}
+
+        {historyError && (
+          <div className="error-box">
+            {historyError}
+          </div>
+        )}
+
+        {!historyLoading &&
+          historyTab === "doubts" &&
+          previousDoubts.length === 0 && (
+            <p className="history-message">
+              No previous doubts found.
+            </p>
+          )}
+
+        {historyTab === "doubts" &&
+          previousDoubts.length > 0 && (
+            <div className="history-list">
+              {previousDoubts.map((item) => (
+                <article
+                  className="history-item"
+                  key={item.id}
+                >
+                  <p className="history-meta">
+                    {item.subject} ·{" "}
+                    {formatDate(item.created_at)}
+                  </p>
+
+                  <h3>{item.question}</h3>
+
+                  <details>
+                    <summary>View answer</summary>
+
+                    <div className="history-answer">
+                      <MarkdownContent
+                        content={item.answer}
+                      />
+                    </div>
+                  </details>
+                </article>
+              ))}
+            </div>
+          )}
+
+        {!historyLoading &&
+          historyTab === "quizzes" &&
+          previousQuizzes.length === 0 && (
+            <p className="history-message">
+              No previous quizzes found.
+            </p>
+          )}
+
+        {historyTab === "quizzes" &&
+          previousQuizzes.length > 0 && (
+            <div className="history-list">
+              {previousQuizzes.map((item) => (
+                <article
+                  className="history-item"
+                  key={item.id}
+                >
+                  <p className="history-meta">
+                    {item.difficulty} ·{" "}
+                    {formatDate(item.created_at)}
+                  </p>
+
+                  <h3>{item.topic}</h3>
+
+                  <p>
+                    Score:{" "}
+                    {item.score === null
+                      ? "Not completed"
+                      : `${item.score} / ${item.total_questions}`}
+                  </p>
+
+                  <details>
+                    <summary>
+                      Review quiz
+                    </summary>
+
+                    <div className="review-questions">
+                      {item.quiz_questions?.map(
+                        (questionItem) => (
+                          <div
+                            className="review-question"
+                            key={questionItem.id}
+                          >
+                            <strong>
+                              {questionItem.question}
+                            </strong>
+
+                            <p>
+                              Correct answer:{" "}
+                              {questionItem.answer}
+                            </p>
+
+                            <p>
+                              {
+                                questionItem.explanation
+                              }
+                            </p>
+                          </div>
+                        )
+                      )}
+                    </div>
+                  </details>
+                </article>
+              ))}
+            </div>
+          )}
       </section>
     </main>
   );

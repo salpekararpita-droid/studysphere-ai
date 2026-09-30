@@ -1,28 +1,21 @@
 {
   "name": "studysphere-backend",
   "version": "1.0.0",
-  "description": "StudySphere AI backend",
+  "description": "Backend API for StudySphere AI",
   "type": "module",
   "main": "src/server.js",
   "scripts": {
-    "dev": "nodemon src/server.js",
     "start": "node src/server.js",
-    "lint": "eslint .",
-    "db:migrate": "prisma migrate dev",
-    "db:generate": "prisma generate",
-    "db:push": "prisma db push",
-    "db:studio": "prisma studio"
+    "dev": "nodemon src/server.js"
   },
   "dependencies": {
-    "cors": "latest",
-    "dotenv": "latest",
-    "express": "latest",
-    "groq-sdk": "^1.6.0"
+    "@supabase/supabase-js": "^2.57.4",
+    "cors": "^2.8.5",
+    "dotenv": "^16.6.1",
+    "express": "^5.1.0",
+    "groq-sdk": "^0.33.0"
   },
   "devDependencies": {
-    "eslint": "^9.0.0",
-    "globals": "^15.0.0",
-    "nodemon": "^3.1.7",
-    "prisma": "6.19.0"
+    "nodemon": "^3.1.10"
   }
 }
