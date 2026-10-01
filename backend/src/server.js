@@ -1,8 +1,17 @@
-import "dotenv/config";
+import dotenv from "dotenv";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
 import cors from "cors";
 import Groq from "groq-sdk";
 import { createClient } from "@supabase/supabase-js";
+
+const currentFile = fileURLToPath(import.meta.url);
+const currentDirectory = path.dirname(currentFile);
+
+dotenv.config({
+  path: path.resolve(currentDirectory, "../.env")
+});
 
 const app = express();
 
@@ -19,16 +28,39 @@ app.use(
 
 app.use(express.json({ limit: "1mb" }));
 
+console.log("Environment check:", {
+  hasGroqKey: Boolean(process.env.GROQ_API_KEY),
+  hasSupabaseUrl: Boolean(
+    process.env.SUPABASE_URL
+  ),
+  hasSupabaseSecretKey: Boolean(
+    process.env.SUPABASE_SECRET_KEY
+  ),
+  supabaseUrl: process.env.SUPABASE_URL
+});
+
+if (!process.env.GROQ_API_KEY) {
+  throw new Error(
+    "GROQ_API_KEY is missing. Check backend/.env"
+  );
+}
+
+if (!process.env.SUPABASE_URL) {
+  throw new Error(
+    "SUPABASE_URL is missing. Check backend/.env"
+  );
+}
+
+if (!process.env.SUPABASE_SECRET_KEY) {
+  throw new Error(
+    "SUPABASE_SECRET_KEY is missing. Check backend/.env"
+  );
+}
+
 const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-console.log({
-  supabaseUrl: process.env.SUPABASE_URL,
-  hasSupabaseSecretKey: Boolean(
-    process.env.SUPABASE_SECRET_KEY
-  )
-}); 
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SECRET_KEY,
@@ -59,7 +91,7 @@ function getCompletionText(completion) {
   ).trim();
 }
 
-function extractJson(text) {
+function parseJsonResponse(text) {
   const cleaned = text
     .replace(/^```json\s*/i, "")
     .replace(/^```\s*/i, "")
@@ -69,23 +101,30 @@ function extractJson(text) {
   return JSON.parse(cleaned);
 }
 
-function validateQuiz(questions) {
+function validateQuizQuestions(questions) {
   if (!Array.isArray(questions)) {
-    throw new Error("Quiz questions must be an array.");
+    throw new Error(
+      "The AI response does not contain a questions array."
+    );
   }
 
   if (questions.length === 0) {
-    throw new Error("The quiz contains no questions.");
+    throw new Error(
+      "The AI returned an empty quiz."
+    );
   }
 
   return questions.map((item, index) => {
     const question = cleanText(item?.question);
+
     const options = Array.isArray(item?.options)
       ? item.options.map((option) =>
           cleanText(option)
         )
       : [];
+
     const answer = cleanText(item?.answer);
+
     const explanation = cleanText(
       item?.explanation
     );
@@ -104,19 +143,19 @@ function validateQuiz(questions) {
 
     if (!answer) {
       throw new Error(
-        `Question ${index + 1} has no answer.`
+        `Question ${index + 1} has no correct answer.`
+      );
+    }
+
+    if (!options.includes(answer)) {
+      throw new Error(
+        `Question ${index + 1} answer does not match an option.`
       );
     }
 
     if (!explanation) {
       throw new Error(
         `Question ${index + 1} has no explanation.`
-      );
-    }
-
-    if (!options.includes(answer)) {
-      throw new Error(
-        `Question ${index + 1} answer is not in its options.`
       );
     }
 
@@ -129,6 +168,10 @@ function validateQuiz(questions) {
   });
 }
 
+/*
+  Basic routes
+*/
+
 app.get("/", (req, res) => {
   res.json({
     success: true,
@@ -140,23 +183,31 @@ app.get("/health", (req, res) => {
   res.json({
     success: true,
     message: "StudySphere backend is healthy.",
+    groqConfigured: Boolean(
+      process.env.GROQ_API_KEY
+    ),
     supabaseConfigured: Boolean(
       process.env.SUPABASE_URL &&
         process.env.SUPABASE_SECRET_KEY
-    ),
-    groqConfigured: Boolean(
-      process.env.GROQ_API_KEY
     )
   });
 });
 
+/*
+  AI doubt solver
+*/
+
 app.post("/api/ai/doubt", async (req, res) => {
   try {
-    const question = cleanText(req.body?.question);
+    const question = cleanText(
+      req.body?.question
+    );
+
     const subject = cleanText(
       req.body?.subject,
       "General"
     );
+
     const sessionId = cleanText(
       req.body?.sessionId
     );
@@ -191,7 +242,7 @@ app.post("/api/ai/doubt", async (req, res) => {
           {
             role: "system",
             content:
-              "You are a helpful academic study tutor. Explain concepts clearly and use Markdown headings, lists, examples, and simple language when appropriate."
+              "You are a helpful academic tutor. Explain topics clearly using simple language, headings, examples, and bullet points when useful. Format the answer with Markdown."
           },
           {
             role: "user",
@@ -212,31 +263,38 @@ ${question}`
       });
     }
 
-    const { error: saveError } = await supabase
-      .from("doubts")
-      .insert({
-        session_id: sessionId,
-        subject,
-        question,
-        answer
-      });
+    const { data: savedDoubt, error: saveError } =
+      await supabase
+        .from("doubts")
+        .insert({
+          session_id: sessionId,
+          subject,
+          question,
+          answer
+        })
+        .select()
+        .single();
 
     if (saveError) {
       console.error(
-        "Failed to save doubt:",
+        "Supabase doubt insert failed:",
         saveError
       );
 
       return res.status(500).json({
         success: false,
         message:
-          "The answer was generated but could not be saved."
+          "The answer was generated but could not be saved.",
+        details: saveError.message,
+        code: saveError.code,
+        hint: saveError.hint
       });
     }
 
     return res.json({
       success: true,
-      answer
+      answer,
+      doubtId: savedDoubt?.id || null
     });
   } catch (error) {
     console.error("Doubt route error:", error);
@@ -248,18 +306,28 @@ ${question}`
   }
 });
 
+/*
+  Generate and save quiz
+*/
+
 app.post("/api/ai/quiz", async (req, res) => {
   try {
-    const topic = cleanText(req.body?.topic);
+    const topic = cleanText(
+      req.body?.topic
+    );
+
     const difficulty = cleanText(
       req.body?.difficulty,
       "Easy"
     );
+
     const sessionId = cleanText(
       req.body?.sessionId
     );
 
-    const requestedCount = Number(req.body?.count);
+    const requestedCount = Number(
+      req.body?.count
+    );
 
     const count =
       Number.isInteger(requestedCount) &&
@@ -272,14 +340,6 @@ app.post("/api/ai/quiz", async (req, res) => {
       return res.status(400).json({
         success: false,
         message: "Quiz topic is required."
-      });
-    }
-
-    if (topic.length > 300) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "Topic must be 300 characters or fewer."
       });
     }
 
@@ -301,7 +361,7 @@ app.post("/api/ai/quiz", async (req, res) => {
           {
             role: "system",
             content:
-              "You create accurate educational multiple-choice quizzes. Return only valid JSON."
+              "You generate accurate educational multiple-choice quizzes. Return only valid JSON."
           },
           {
             role: "user",
@@ -310,7 +370,7 @@ app.post("/api/ai/quiz", async (req, res) => {
 Topic: ${topic}
 Difficulty: ${difficulty}
 
-Return this exact JSON structure:
+Return only this JSON structure:
 {
   "questions": [
     {
@@ -322,7 +382,7 @@ Return this exact JSON structure:
         "Option 4"
       ],
       "answer": "The exact correct option",
-      "explanation": "A short explanation"
+      "explanation": "Short explanation"
     }
   ]
 }
@@ -338,8 +398,10 @@ Rules:
       });
 
     const rawQuiz = getCompletionText(completion);
-    const parsedQuiz = extractJson(rawQuiz);
-    const questions = validateQuiz(
+
+    const parsedQuiz = parseJsonResponse(rawQuiz);
+
+    const questions = validateQuizQuestions(
       parsedQuiz.questions
     );
 
@@ -350,14 +412,25 @@ Rules:
           session_id: sessionId,
           topic,
           difficulty,
-          total_questions: questions.length,
-          score: null
+          score: null,
+          total_questions: questions.length
         })
         .select()
         .single();
 
     if (quizError) {
-      throw quizError;
+      console.error(
+        "Supabase quiz insert failed:",
+        quizError
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: "Quiz could not be saved.",
+        details: quizError.message,
+        code: quizError.code,
+        hint: quizError.hint
+      });
     }
 
     const questionRows = questions.map((item) => ({
@@ -377,10 +450,22 @@ Rules:
       .select();
 
     if (questionsError) {
-      throw questionsError;
+      console.error(
+        "Supabase quiz questions insert failed:",
+        questionsError
+      );
+
+      return res.status(500).json({
+        success: false,
+        message:
+          "Quiz questions could not be saved.",
+        details: questionsError.message,
+        code: questionsError.code,
+        hint: questionsError.hint
+      });
     }
 
-    const questionsForClient = questions.map(
+    const clientQuestions = questions.map(
       (item, index) => ({
         id: savedQuestions?.[index]?.id || null,
         question: item.question,
@@ -393,22 +478,26 @@ Rules:
     return res.json({
       success: true,
       quizId: savedQuiz.id,
-      questions: questionsForClient
+      questions: clientQuestions
     });
   } catch (error) {
-    console.error("Quiz route error:", error);
+  console.error(
+    "QUIZ ROUTE ERROR:",
+    error?.stack || error
+  );
 
-    return res.status(500).json({
-      success: false,
-      message:
-        "Unable to generate and save the quiz.",
-      details:
-        process.env.NODE_ENV === "development"
-          ? error?.message
-          : undefined
-    });
-  }
+  return res.status(500).json({
+    success: false,
+    message:
+      "Unable to generate and save the quiz.",
+    details: error?.message || "Unknown error"
+  });
+}
 });
+
+/*
+  Save quiz result
+*/
 
 app.post(
   "/api/ai/quiz/:quizId/result",
@@ -417,11 +506,13 @@ app.post(
       const quizId = cleanText(
         req.params?.quizId
       );
+
       const sessionId = cleanText(
         req.body?.sessionId
       );
 
       const score = Number(req.body?.score);
+
       const totalQuestions = Number(
         req.body?.totalQuestions
       );
@@ -432,10 +523,17 @@ app.post(
         ? req.body.answers
         : [];
 
-      if (!quizId || !isValidSessionId(sessionId)) {
+      if (!quizId) {
         return res.status(400).json({
           success: false,
-          message: "Quiz ID and session ID are required."
+          message: "Quiz ID is required."
+        });
+      }
+
+      if (!isValidSessionId(sessionId)) {
+        return res.status(400).json({
+          success: false,
+          message: "Valid session ID is required."
         });
       }
 
@@ -443,8 +541,8 @@ app.post(
         !Number.isInteger(score) ||
         !Number.isInteger(totalQuestions) ||
         score < 0 ||
-        totalQuestions < 1 ||
-        score > totalQuestions
+        score > totalQuestions ||
+        totalQuestions < 1
       ) {
         return res.status(400).json({
           success: false,
@@ -452,13 +550,15 @@ app.post(
         });
       }
 
-      const { data: quiz, error: quizFindError } =
-        await supabase
-          .from("quizzes")
-          .select("id, session_id")
-          .eq("id", quizId)
-          .eq("session_id", sessionId)
-          .single();
+      const {
+        data: quiz,
+        error: quizFindError
+      } = await supabase
+        .from("quizzes")
+        .select("id, session_id")
+        .eq("id", quizId)
+        .eq("session_id", sessionId)
+        .single();
 
       if (quizFindError || !quiz) {
         return res.status(404).json({
@@ -467,18 +567,24 @@ app.post(
         });
       }
 
-      const { error: updateQuizError } =
-        await supabase
-          .from("quizzes")
-          .update({
-            score,
-            total_questions: totalQuestions
-          })
-          .eq("id", quizId)
-          .eq("session_id", sessionId);
+      const {
+        error: quizUpdateError
+      } = await supabase
+        .from("quizzes")
+        .update({
+          score,
+          total_questions: totalQuestions
+        })
+        .eq("id", quizId)
+        .eq("session_id", sessionId);
 
-      if (updateQuizError) {
-        throw updateQuizError;
+      if (quizUpdateError) {
+        return res.status(500).json({
+          success: false,
+          message: "Quiz score could not be saved.",
+          details: quizUpdateError.message,
+          code: quizUpdateError.code
+        });
       }
 
       for (const item of answers) {
@@ -486,17 +592,26 @@ app.post(
           continue;
         }
 
-        await supabase
-          .from("quiz_questions")
-          .update({
-            selected_answer:
-              cleanText(item.selectedAnswer) ||
-              null,
-            is_correct:
-              item.isCorrect === true
-          })
-          .eq("id", item.questionId)
-          .eq("quiz_id", quizId);
+        const { error: answerError } =
+          await supabase
+            .from("quiz_questions")
+            .update({
+              selected_answer:
+                cleanText(
+                  item.selectedAnswer
+                ) || null,
+              is_correct:
+                item.isCorrect === true
+            })
+            .eq("id", item.questionId)
+            .eq("quiz_id", quizId);
+
+        if (answerError) {
+          console.error(
+            "Quiz answer update failed:",
+            answerError
+          );
+        }
       }
 
       return res.json({
@@ -505,7 +620,7 @@ app.post(
       });
     } catch (error) {
       console.error(
-        "Save quiz result error:",
+        "Quiz result route error:",
         error
       );
 
@@ -516,6 +631,10 @@ app.post(
     }
   }
 );
+
+/*
+  Doubt history
+*/
 
 app.get("/api/history/doubts", async (req, res) => {
   try {
@@ -539,7 +658,18 @@ app.get("/api/history/doubts", async (req, res) => {
       });
 
     if (error) {
-      throw error;
+      console.error(
+        "Doubt history error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
     }
 
     return res.json({
@@ -558,6 +688,10 @@ app.get("/api/history/doubts", async (req, res) => {
     });
   }
 });
+
+/*
+  Quiz history
+*/
 
 app.get("/api/history/quizzes", async (req, res) => {
   try {
@@ -597,7 +731,18 @@ app.get("/api/history/quizzes", async (req, res) => {
       });
 
     if (error) {
-      throw error;
+      console.error(
+        "Quiz history error:",
+        error
+      );
+
+      return res.status(500).json({
+        success: false,
+        message: error.message,
+        code: error.code,
+        details: error.details,
+        hint: error.hint
+      });
     }
 
     return res.json({
@@ -617,6 +762,10 @@ app.get("/api/history/quizzes", async (req, res) => {
   }
 });
 
+/*
+  Unknown route
+*/
+
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -624,8 +773,15 @@ app.use((req, res) => {
   });
 });
 
+/*
+  General error handler
+*/
+
 app.use((error, req, res, next) => {
-  console.error("Unhandled server error:", error);
+  console.error(
+    "Unhandled server error:",
+    error
+  );
 
   res.status(500).json({
     success: false,
