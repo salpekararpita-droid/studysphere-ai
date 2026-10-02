@@ -74,7 +74,14 @@ app.use(
   })
 );
 
-app.options("*", cors());
+// Do not add app.options("*", cors()) here.
+
+app.use(
+  express.json({
+    limit: "1mb"
+  })
+);
+
 
 console.log("Environment check:", {
   hasGroqKey: Boolean(
