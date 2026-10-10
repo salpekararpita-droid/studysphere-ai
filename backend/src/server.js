@@ -20,7 +20,14 @@ const PORT = Number(
 );
 
 const FRONTEND_URL =
-  process.env.FRONTEND_URL || "*";
+  process.env.FRONTEND_URL ||
+  "http://localhost:5173";
+
+const allowedOrigins = [
+  FRONTEND_URL,
+  "http://localhost:5173",
+  "http://localhost:3000"
+].filter(Boolean);
 
 app.use(
   cors({
@@ -29,17 +36,7 @@ app.use(
         return callback(null, true);
       }
 
-      if (
-        FRONTEND_URL === "*" ||
-        origin === FRONTEND_URL
-      ) {
-        return callback(null, true);
-      }
-
-      if (
-        origin === "http://localhost:5173" ||
-        origin === "http://localhost:3000"
-      ) {
+      if (allowedOrigins.includes(origin)) {
         return callback(null, true);
       }
 
@@ -64,6 +61,7 @@ app.use(
       "Content-Type",
       "Authorization"
     ],
+    optionsSuccessStatus: 204,
     credentials: false
   })
 );
@@ -73,15 +71,6 @@ app.use(
     limit: "1mb"
   })
 );
-
-// Do not add app.options("*", cors()) here.
-
-app.use(
-  express.json({
-    limit: "1mb"
-  })
-);
-
 
 console.log("Environment check:", {
   hasGroqKey: Boolean(
@@ -96,24 +85,25 @@ console.log("Environment check:", {
   hasFrontendUrl: Boolean(
     process.env.FRONTEND_URL
   ),
+  frontendUrl: process.env.FRONTEND_URL,
   supabaseUrl: process.env.SUPABASE_URL
 });
 
 if (!process.env.GROQ_API_KEY) {
   throw new Error(
-    "GROQ_API_KEY is missing. Check backend/.env or Render environment variables."
+    "GROQ_API_KEY is missing. Add it to backend/.env or Render environment variables."
   );
 }
 
 if (!process.env.SUPABASE_URL) {
   throw new Error(
-    "SUPABASE_URL is missing. Check backend/.env or Render environment variables."
+    "SUPABASE_URL is missing. Add it to backend/.env or Render environment variables."
   );
 }
 
 if (!process.env.SUPABASE_SECRET_KEY) {
   throw new Error(
-    "SUPABASE_SECRET_KEY is missing. Check backend/.env or Render environment variables."
+    "SUPABASE_SECRET_KEY is missing. Add it to backend/.env or Render environment variables."
   );
 }
 
@@ -240,9 +230,7 @@ async function getAuthenticatedUser(req) {
     req.headers.authorization || "";
 
   if (
-    !authorization.startsWith(
-      "Bearer "
-    )
+    !authorization.startsWith("Bearer ")
   ) {
     return {
       user: null,
@@ -251,7 +239,14 @@ async function getAuthenticatedUser(req) {
   }
 
   const accessToken =
-    authorization.slice("Bearer ".length);
+    authorization.slice("Bearer ".length).trim();
+
+  if (!accessToken) {
+    return {
+      user: null,
+      error: "Missing access token."
+    };
+  }
 
   const {
     data,
@@ -297,22 +292,20 @@ async function requireUser(req, res) {
 app.get("/", (req, res) => {
   res.json({
     success: true,
-    message:
-      "StudySphere backend is running."
+    message: "StudySphere backend is running."
   });
 });
 
 app.get("/health", (req, res) => {
   res.json({
     success: true,
-    message:
-      "StudySphere backend is healthy.",
+    message: "StudySphere backend is healthy.",
     groqConfigured: Boolean(
       process.env.GROQ_API_KEY
     ),
     supabaseConfigured: Boolean(
       process.env.SUPABASE_URL &&
-        process.env.SUPABASE_SECRET_KEY
+      process.env.SUPABASE_SECRET_KEY
     )
   });
 });
@@ -433,18 +426,14 @@ ${question}`
   } catch (error) {
     console.error(
       "Doubt route error:",
-      error
+      error?.stack || error
     );
 
     return res.status(500).json({
       success: false,
       message:
         "Unable to generate the answer.",
-      details:
-        process.env.NODE_ENV ===
-        "development"
-          ? error.message
-          : undefined
+      details: error?.message
     });
   }
 });
@@ -652,8 +641,7 @@ Rules:
       success: false,
       message:
         "Unable to generate and save the quiz.",
-      details: error?.message ||
-        "Unknown error"
+      details: error?.message
     });
   }
 });
@@ -744,8 +732,7 @@ app.post(
         .from("quizzes")
         .update({
           score,
-          total_questions:
-            totalQuestions
+          total_questions: totalQuestions
         })
         .eq("id", quizId)
         .eq("user_id", user.id);
@@ -796,13 +783,14 @@ app.post(
     } catch (error) {
       console.error(
         "Quiz result route error:",
-        error
+        error?.stack || error
       );
 
       return res.status(500).json({
         success: false,
         message:
-          "Unable to save quiz result."
+          "Unable to save quiz result.",
+        details: error?.message
       });
     }
   }
@@ -854,13 +842,14 @@ app.get(
     } catch (error) {
       console.error(
         "Doubt history route error:",
-        error
+        error?.stack || error
       );
 
       return res.status(500).json({
         success: false,
         message:
-          "Unable to load previous doubts."
+          "Unable to load previous doubts.",
+        details: error?.message
       });
     }
   }
@@ -928,13 +917,14 @@ app.get(
     } catch (error) {
       console.error(
         "Quiz history route error:",
-        error
+        error?.stack || error
       );
 
       return res.status(500).json({
         success: false,
         message:
-          "Unable to load previous quizzes."
+          "Unable to load previous quizzes.",
+        details: error?.message
       });
     }
   }
@@ -950,7 +940,7 @@ app.use((req, res) => {
 app.use((error, req, res, next) => {
   console.error(
     "Unhandled server error:",
-    error
+    error?.stack || error
   );
 
   res.status(500).json({
