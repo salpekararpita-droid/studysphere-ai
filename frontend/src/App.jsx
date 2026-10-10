@@ -314,27 +314,25 @@ function App() {
     }
   }, [user]);
 
-  async function getAccessToken() {
-    const {
-      data,
-      error
-    } = await supabase.auth.getSession();
+ async function getAccessToken() {
+  const {
+    data: refreshData,
+    error: refreshError
+  } = await supabase.auth.refreshSession();
 
-    if (error) {
-      throw error;
-    }
+  if (
+    refreshError ||
+    !refreshData.session
+  ) {
+    await supabase.auth.signOut();
 
-    const accessToken =
-      data.session?.access_token;
-
-    if (!accessToken) {
-      throw new Error(
-        "Your login session has expired. Please log in again."
-      );
-    }
-
-    return accessToken;
+    throw new Error(
+      "Your login session expired. Please log in again."
+    );
   }
+
+  return refreshData.session.access_token;
+}
 
   async function apiRequest(
     endpoint,
