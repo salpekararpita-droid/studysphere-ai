@@ -60,9 +60,15 @@ function AuthForm({
     setMessage("");
 
     try {
-      if (!email || !password) {
+      if (!email.trim()) {
         throw new Error(
-          "Email and password are required."
+          "Email is required."
+        );
+      }
+
+      if (!password) {
+        throw new Error(
+          "Password is required."
         );
       }
 
@@ -74,11 +80,11 @@ function AuthForm({
 
       const result = isSignup
         ? await supabase.auth.signUp({
-            email,
+            email: email.trim(),
             password
           })
         : await supabase.auth.signInWithPassword({
-            email,
+            email: email.trim(),
             password
           });
 
@@ -89,13 +95,16 @@ function AuthForm({
       if (isSignup) {
         if (!result.data.session) {
           setMessage(
-            "Account created. Check your email to confirm your account, then log in."
+            "Account created. Check your email, confirm your account, and then log in."
           );
+
           return;
         }
 
         if (result.data.user) {
-          onAuthenticated(result.data.user);
+          onAuthenticated(
+            result.data.user
+          );
         }
 
         return;
@@ -107,14 +116,18 @@ function AuthForm({
         );
       }
 
-      onAuthenticated(result.data.user);
+      onAuthenticated(
+        result.data.user
+      );
     } catch (error) {
       console.error(
         "Authentication error:",
         error
       );
 
-      setMessage(getErrorMessage(error));
+      setMessage(
+        getErrorMessage(error)
+      );
     } finally {
       setLoading(false);
     }
@@ -230,7 +243,7 @@ function App() {
     useState("Easy");
 
   const [count, setCount] =
-    useState(5);
+    useState("5");
 
   const [quiz, setQuiz] =
     useState(null);
@@ -270,69 +283,112 @@ function App() {
   useEffect(() => {
     let mounted = true;
 
-    async function loadSession() {
-      const {
-        data,
-        error
-      } = await supabase.auth.getSession();
+    async function loadInitialSession() {
+      try {
+        const {
+          data,
+          error
+        } = await supabase.auth.getSession();
 
-      if (!mounted) {
-        return;
-      }
+        if (error) {
+          throw error;
+        }
 
-      if (error) {
+        if (!mounted) {
+          return;
+        }
+
+        setUser(
+          data.session?.user || null
+        );
+      } catch (error) {
         console.error(
-          "Session error:",
+          "Initial session error:",
           error
         );
-      }
 
-      setUser(data.session?.user || null);
-      setAuthLoading(false);
+        if (mounted) {
+          setUser(null);
+        }
+      } finally {
+        if (mounted) {
+          setAuthLoading(false);
+        }
+      }
     }
 
-    loadSession();
+    loadInitialSession();
 
     const {
-      data: subscriptionData
+      data: authListener
     } = supabase.auth.onAuthStateChange(
       (_event, session) => {
-        setUser(session?.user || null);
+        if (mounted) {
+          setUser(
+            session?.user || null
+          );
+        }
       }
     );
 
     return () => {
       mounted = false;
 
-      subscriptionData.subscription.unsubscribe();
+      authListener.subscription.unsubscribe();
     };
   }, []);
 
   useEffect(() => {
-    if (user) {
-      loadHistory();
+    if (!user) {
+      return;
     }
+
+    loadHistory();
   }, [user]);
 
- async function getAccessToken() {
-  const {
-    data: refreshData,
-    error: refreshError
-  } = await supabase.auth.refreshSession();
+  async function getAccessToken() {
+    const {
+      data,
+      error
+    } = await supabase.auth.getSession();
 
-  if (
-    refreshError ||
-    !refreshData.session
-  ) {
-    await supabase.auth.signOut();
+    if (error) {
+      throw error;
+    }
 
-    throw new Error(
-      "Your login session expired. Please log in again."
-    );
+    const currentSession =
+      data.session;
+
+    const currentAccessToken =
+      currentSession?.access_token;
+
+    if (currentAccessToken) {
+      return currentAccessToken;
+    }
+
+    const {
+      data: refreshedData,
+      error: refreshError
+    } = await supabase.auth.refreshSession();
+
+    if (
+      refreshError ||
+      !refreshedData.session
+    ) {
+      await supabase.auth.signOut({
+        scope: "local"
+      });
+
+      setUser(null);
+
+      throw new Error(
+        "Your login session expired. Please log in again."
+      );
+    }
+
+    return refreshedData.session
+      .access_token;
   }
-
-  return refreshData.session.access_token;
-}
 
   async function apiRequest(
     endpoint,
@@ -353,47 +409,67 @@ function App() {
       }
     );
 
-    let responseBody = null;
+    let body = null;
 
     try {
-      responseBody =
-        await response.json();
+      body = await response.json();
     } catch {
-      responseBody = null;
+      body = null;
     }
 
     if (!response.ok) {
+      if (response.status === 401) {
+        await supabase.auth.signOut({
+          scope: "local"
+        });
+
+        setUser(null);
+      }
+
       throw new Error(
-        responseBody?.message ||
-          responseBody?.details ||
+        body?.message ||
+          body?.details ||
           `Request failed with status ${response.status}.`
       );
     }
 
-    return responseBody;
+    return body;
   }
 
   async function handleLogout() {
-    const { error } =
-      await supabase.auth.signOut();
+    const {
+      error
+    } = await supabase.auth.signOut({
+      scope: "local"
+    });
 
     if (error) {
-      setMessage(error.message);
-      return;
+      console.error(
+        "Logout error:",
+        error
+      );
+
+      localStorage.clear();
+      sessionStorage.clear();
     }
 
     setUser(null);
     setQuiz(null);
+    setQuizId(null);
     setAnswer("");
     setHistoryDoubts([]);
     setHistoryQuizzes([]);
+    setMessage("");
   }
 
   async function solveDoubt(event) {
     event.preventDefault();
 
     if (!question.trim()) {
-      setMessage("Please enter a question.");
+      setMessage(
+        "Please enter a question."
+      );
+
       return;
     }
 
@@ -416,6 +492,7 @@ function App() {
       );
 
       setAnswer(data.answer || "");
+
       await loadHistory();
     } catch (error) {
       console.error(
@@ -423,7 +500,9 @@ function App() {
         error
       );
 
-      setMessage(getErrorMessage(error));
+      setMessage(
+        getErrorMessage(error)
+      );
     } finally {
       setDoubtLoading(false);
     }
@@ -433,7 +512,10 @@ function App() {
     event.preventDefault();
 
     if (!topic.trim()) {
-      setMessage("Please enter a quiz topic.");
+      setMessage(
+        "Please enter a quiz topic."
+      );
+
       return;
     }
 
@@ -461,6 +543,7 @@ function App() {
       );
 
       setQuizId(data.quizId);
+
       setQuiz({
         topic: topic.trim(),
         difficulty,
@@ -474,42 +557,78 @@ function App() {
         error
       );
 
-      setMessage(getErrorMessage(error));
+      setMessage(
+        getErrorMessage(error)
+      );
     } finally {
       setQuizLoading(false);
     }
   }
 
-  function checkAnswer() {
+  function getCurrentAnswerRecord() {
     if (!quiz?.questions?.length) {
-      return;
+      return null;
     }
-
-    if (!selectedAnswer) {
-      setMessage(
-        "Please select an answer first."
-      );
-      return;
-    }
-
-    setMessage("");
 
     const current =
       quiz.questions[currentQuestion];
 
-    const isCorrect =
-      selectedAnswer === current.answer;
+    if (!current || !selectedAnswer) {
+      return null;
+    }
 
-    const answerRecord = {
+    return {
       questionId: current.id,
       selectedAnswer,
-      isCorrect
+      isCorrect:
+        selectedAnswer === current.answer
     };
+  }
+
+  function hasAnsweredCurrentQuestion() {
+    if (!quiz?.questions?.length) {
+      return false;
+    }
+
+    const current =
+      quiz.questions[currentQuestion];
+
+    return quizAnswers.some(
+      (item) =>
+        item.questionId === current.id
+    );
+  }
+
+  function checkAnswer() {
+    const answerRecord =
+      getCurrentAnswerRecord();
+
+    if (!answerRecord) {
+      setMessage(
+        "Please select an answer first."
+      );
+
+      return;
+    }
+
+    if (hasAnsweredCurrentQuestion()) {
+      setMessage(
+        "You already checked this answer."
+      );
+
+      return;
+    }
 
     setQuizAnswers((previous) => [
       ...previous,
       answerRecord
     ]);
+
+    setMessage(
+      answerRecord.isCorrect
+        ? "Correct answer."
+        : "That answer is not correct."
+    );
   }
 
   async function nextQuestion() {
@@ -517,15 +636,36 @@ function App() {
       return;
     }
 
-    const alreadyAnswered =
-      quizAnswers.some(
+    let answers = [
+      ...quizAnswers
+    ];
+
+    const currentAnswer =
+      getCurrentAnswerRecord();
+
+    if (
+      currentAnswer &&
+      !answers.some(
+        (item) =>
+          item.questionId ===
+          currentAnswer.questionId
+      )
+    ) {
+      answers.push(currentAnswer);
+      setQuizAnswers(answers);
+    }
+
+    if (
+      !answers.some(
         (item) =>
           item.questionId ===
           quiz.questions[currentQuestion].id
+      )
+    ) {
+      setMessage(
+        "Please select and check an answer first."
       );
 
-    if (!alreadyAnswered) {
-      checkAnswer();
       return;
     }
 
@@ -536,42 +676,39 @@ function App() {
       setCurrentQuestion(
         (value) => value + 1
       );
+
       setSelectedAnswer("");
       setMessage("");
+
       return;
     }
 
-    await finishQuiz();
+    await finishQuiz(answers);
   }
 
-  async function finishQuiz() {
+  async function finishQuiz(
+    answerRecords = quizAnswers
+  ) {
     if (!quiz || !quizId) {
       return;
     }
 
     const finalAnswers = [
-      ...quizAnswers
+      ...answerRecords
     ];
 
-    const currentQuestionData =
-      quiz.questions[currentQuestion];
+    const currentAnswer =
+      getCurrentAnswerRecord();
 
     if (
-      currentQuestionData &&
-      selectedAnswer &&
+      currentAnswer &&
       !finalAnswers.some(
         (item) =>
           item.questionId ===
-          currentQuestionData.id
+          currentAnswer.questionId
       )
     ) {
-      finalAnswers.push({
-        questionId: currentQuestionData.id,
-        selectedAnswer,
-        isCorrect:
-          selectedAnswer ===
-          currentQuestionData.answer
-      });
+      finalAnswers.push(currentAnswer);
     }
 
     const score = finalAnswers.filter(
@@ -595,6 +732,8 @@ function App() {
 
       setQuizAnswers(finalAnswers);
       setQuizFinished(true);
+      setMessage("");
+
       await loadHistory();
     } catch (error) {
       console.error(
@@ -602,35 +741,71 @@ function App() {
         error
       );
 
-      setMessage(getErrorMessage(error));
+      setMessage(
+        getErrorMessage(error)
+      );
     }
   }
 
   async function loadHistory() {
+    if (!user) {
+      return;
+    }
+
     setHistoryLoading(true);
 
     try {
+      const accessToken =
+        await getAccessToken();
+
+      const headers = {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${accessToken}`
+      };
+
       const [
-        doubtsData,
-        quizzesData
+        doubtsResponse,
+        quizzesResponse
       ] = await Promise.all([
-        apiRequest(
-          `/api/history/doubts?sessionId=${encodeURIComponent(
+        fetch(
+          `${API_URL}/api/history/doubts?sessionId=${encodeURIComponent(
             sessionId
           )}`,
           {
-            method: "GET"
+            method: "GET",
+            headers
           }
         ),
-        apiRequest(
-          `/api/history/quizzes?sessionId=${encodeURIComponent(
+        fetch(
+          `${API_URL}/api/history/quizzes?sessionId=${encodeURIComponent(
             sessionId
           )}`,
           {
-            method: "GET"
+            method: "GET",
+            headers
           }
         )
       ]);
+
+      const doubtsData =
+        await doubtsResponse.json();
+
+      const quizzesData =
+        await quizzesResponse.json();
+
+      if (!doubtsResponse.ok) {
+        throw new Error(
+          doubtsData?.message ||
+            `Could not load doubt history. Status: ${doubtsResponse.status}`
+        );
+      }
+
+      if (!quizzesResponse.ok) {
+        throw new Error(
+          quizzesData?.message ||
+            `Could not load quiz history. Status: ${quizzesResponse.status}`
+        );
+      }
 
       setHistoryDoubts(
         doubtsData.doubts || []
@@ -645,7 +820,9 @@ function App() {
         error
       );
 
-      setMessage(getErrorMessage(error));
+      setMessage(
+        getErrorMessage(error)
+      );
     } finally {
       setHistoryLoading(false);
     }
@@ -670,6 +847,9 @@ function App() {
   const current =
     quiz?.questions?.[currentQuestion];
 
+  const currentAnswerRecord =
+    getCurrentAnswerRecord();
+
   const score = quizAnswers.filter(
     (item) => item.isCorrect
   ).length;
@@ -679,13 +859,16 @@ function App() {
       <header className="app-header">
         <div>
           <h1>StudySphere</h1>
+
           <p>
             AI-powered learning assistant
           </p>
         </div>
 
         <div className="user-controls">
-          <span>{user.email}</span>
+          <span>
+            {user.email}
+          </span>
 
           <button
             type="button"
@@ -697,7 +880,9 @@ function App() {
       </header>
 
       <section className="hero-section">
-        <h2>Learn smarter with AI</h2>
+        <h2>
+          Learn smarter with AI
+        </h2>
 
         <p>
           Ask questions, generate quizzes,
@@ -757,6 +942,7 @@ function App() {
           {answer && (
             <div className="answer-box">
               <h3>Answer</h3>
+
               <div className="markdown-answer">
                 {answer}
               </div>
@@ -796,9 +982,11 @@ function App() {
               <option value="Easy">
                 Easy
               </option>
+
               <option value="Medium">
                 Medium
               </option>
+
               <option value="Hard">
                 Hard
               </option>
@@ -815,9 +1003,17 @@ function App() {
                 setCount(event.target.value)
               }
             >
-              <option value="3">3</option>
-              <option value="5">5</option>
-              <option value="10">10</option>
+              <option value="3">
+                3
+              </option>
+
+              <option value="5">
+                5
+              </option>
+
+              <option value="10">
+                10
+              </option>
             </select>
 
             <button
@@ -845,7 +1041,9 @@ function App() {
                 {quiz.questions.length}
               </p>
 
-              <h3>{current.question}</h3>
+              <h3>
+                {current.question}
+              </h3>
 
               <div className="options-list">
                 {current.options.map(
@@ -869,7 +1067,9 @@ function App() {
                         }
                       />
 
-                      <span>{option}</span>
+                      <span>
+                        {option}
+                      </span>
                     </label>
                   )
                 )}
@@ -879,16 +1079,24 @@ function App() {
                 <button
                   type="button"
                   onClick={checkAnswer}
-                  disabled={!selectedAnswer}
+                  disabled={
+                    !selectedAnswer ||
+                    Boolean(
+                      hasAnsweredCurrentQuestion()
+                    )
+                  }
                 >
-                  Check answer
+                  {hasAnsweredCurrentQuestion()
+                    ? "Answer checked"
+                    : "Check answer"}
                 </button>
 
                 <button
                   type="button"
                   onClick={nextQuestion}
                   disabled={
-                    !selectedAnswer
+                    !selectedAnswer &&
+                    !currentAnswerRecord
                   }
                 >
                   {currentQuestion ===
@@ -898,13 +1106,23 @@ function App() {
                 </button>
               </div>
 
+              {currentAnswerRecord && (
+                <p>
+                  {currentAnswerRecord.isCorrect
+                    ? "Correct."
+                    : `Correct answer: ${current.answer}`}
+                </p>
+              )}
+
               <p>
                 {current.explanation}
               </p>
             </>
           ) : (
             <div className="quiz-result">
-              <h3>Quiz complete</h3>
+              <h3>
+                Quiz complete
+              </h3>
 
               <p>
                 Score: {score} /{" "}
@@ -920,6 +1138,7 @@ function App() {
                   setCurrentQuestion(0);
                   setSelectedAnswer("");
                   setQuizFinished(false);
+                  setMessage("");
                 }}
               >
                 Start another quiz
@@ -932,19 +1151,25 @@ function App() {
       <section className="history-grid">
         <article className="card">
           <div className="section-heading">
-            <h2>Previous doubts</h2>
+            <h2>
+              Previous doubts
+            </h2>
 
             <button
               type="button"
               onClick={loadHistory}
               disabled={historyLoading}
             >
-              Refresh
+              {historyLoading
+                ? "Loading..."
+                : "Refresh"}
             </button>
           </div>
 
           {historyDoubts.length === 0 ? (
-            <p>No saved doubts yet.</p>
+            <p>
+              No saved doubts yet.
+            </p>
           ) : (
             historyDoubts.map((item) => (
               <div
@@ -955,7 +1180,9 @@ function App() {
                   {item.subject}
                 </strong>
 
-                <p>{item.question}</p>
+                <p>
+                  {item.question}
+                </p>
 
                 <small>
                   {item.created_at
@@ -971,19 +1198,25 @@ function App() {
 
         <article className="card">
           <div className="section-heading">
-            <h2>Previous quizzes</h2>
+            <h2>
+              Previous quizzes
+            </h2>
 
             <button
               type="button"
               onClick={loadHistory}
               disabled={historyLoading}
             >
-              Refresh
+              {historyLoading
+                ? "Loading..."
+                : "Refresh"}
             </button>
           </div>
 
           {historyQuizzes.length === 0 ? (
-            <p>No saved quizzes yet.</p>
+            <p>
+              No saved quizzes yet.
+            </p>
           ) : (
             historyQuizzes.map((item) => (
               <div
