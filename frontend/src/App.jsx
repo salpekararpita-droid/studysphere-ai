@@ -36,7 +36,8 @@ function getErrorMessage(error) {
 }
 
 function AuthForm({
-  onAuthenticated
+  onAuthenticated,
+  onForgotPassword
 }) {
   const [email, setEmail] =
     useState("");
@@ -194,6 +195,16 @@ function AuthForm({
           </button>
         </form>
 
+        {!isSignup && (
+          <button
+            type="button"
+            className="link-button"
+            onClick={onForgotPassword}
+          >
+            Forgot password?
+          </button>
+        )}
+
         {message && (
           <p className="status-message">
             {message}
@@ -217,12 +228,265 @@ function AuthForm({
   );
 }
 
+function ForgotPasswordForm({
+  onBack
+}) {
+  const [email, setEmail] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (!email.trim()) {
+      setMessage(
+        "Please enter your email address."
+      );
+
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const redirectTo =
+        `${window.location.origin}/reset-password`;
+
+      const {
+        error
+      } = await supabase.auth.resetPasswordForEmail(
+        email.trim(),
+        {
+          redirectTo
+        }
+      );
+
+      if (error) {
+        throw error;
+      }
+
+      setMessage(
+        "If an account exists for this email, a password reset link has been sent. Check your inbox and spam folder."
+      );
+    } catch (error) {
+      console.error(
+        "Password reset error:",
+        error
+      );
+
+      setMessage(
+        getErrorMessage(error)
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <h1>Reset password</h1>
+
+        <p>
+          Enter your email and we will send you
+          a password reset link.
+        </p>
+
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="reset-email">
+            Email
+          </label>
+
+          <input
+            id="reset-email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(event) =>
+              setEmail(event.target.value)
+            }
+            required
+          />
+
+          <button
+            type="submit"
+            disabled={loading}
+          >
+            {loading
+              ? "Sending..."
+              : "Send reset link"}
+          </button>
+        </form>
+
+        {message && (
+          <p className="status-message">
+            {message}
+          </p>
+        )}
+
+        <button
+          type="button"
+          className="link-button"
+          onClick={onBack}
+        >
+          Back to login
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function UpdatePasswordForm({
+  onComplete
+}) {
+  const [password, setPassword] =
+    useState("");
+
+  const [confirmPassword, setConfirmPassword] =
+    useState("");
+
+  const [loading, setLoading] =
+    useState(false);
+
+  const [message, setMessage] =
+    useState("");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+
+    if (password.length < 6) {
+      setMessage(
+        "Password must contain at least 6 characters."
+      );
+
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setMessage(
+        "Passwords do not match."
+      );
+
+      return;
+    }
+
+    setLoading(true);
+    setMessage("");
+
+    try {
+      const {
+        error
+      } = await supabase.auth.updateUser({
+        password
+      });
+
+      if (error) {
+        throw error;
+      }
+
+      setMessage(
+        "Password updated successfully."
+      );
+
+      setTimeout(() => {
+        onComplete();
+      }, 1500);
+    } catch (error) {
+      console.error(
+        "Password update error:",
+        error
+      );
+
+      setMessage(
+        getErrorMessage(error)
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <h1>Choose a new password</h1>
+
+        <p>
+          Enter and confirm your new password.
+        </p>
+
+        <form onSubmit={handleSubmit}>
+          <label htmlFor="new-password">
+            New password
+          </label>
+
+          <input
+            id="new-password"
+            type="password"
+            autoComplete="new-password"
+            placeholder="At least 6 characters"
+            value={password}
+            onChange={(event) =>
+              setPassword(event.target.value)
+            }
+            minLength={6}
+            required
+          />
+
+          <label htmlFor="confirm-password">
+            Confirm password
+          </label>
+
+          <input
+            id="confirm-password"
+            type="password"
+            autoComplete="new-password"
+            placeholder="Repeat your password"
+            value={confirmPassword}
+            onChange={(event) =>
+              setConfirmPassword(
+                event.target.value
+              )
+            }
+            minLength={6}
+            required
+          />
+
+          <button
+            type="submit"
+            disabled={loading}
+          >
+            {loading
+              ? "Updating..."
+              : "Update password"}
+          </button>
+        </form>
+
+        {message && (
+          <p className="status-message">
+            {message}
+          </p>
+        )}
+      </section>
+    </main>
+  );
+}
+
 function App() {
   const [user, setUser] =
     useState(null);
 
   const [authLoading, setAuthLoading] =
     useState(true);
+
+  const [authScreen, setAuthScreen] =
+    useState("login");
 
   const [subject, setSubject] =
     useState("");
@@ -280,6 +544,10 @@ function App() {
 
   const sessionId = getSessionId();
 
+  const isResetPasswordRoute =
+    window.location.pathname ===
+    "/reset-password";
+
   useEffect(() => {
     let mounted = true;
 
@@ -301,6 +569,15 @@ function App() {
         setUser(
           data.session?.user || null
         );
+
+        if (
+          isResetPasswordRoute &&
+          data.session
+        ) {
+          setAuthScreen(
+            "update-password"
+          );
+        }
       } catch (error) {
         console.error(
           "Initial session error:",
@@ -322,10 +599,20 @@ function App() {
     const {
       data: authListener
     } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        if (mounted) {
-          setUser(
-            session?.user || null
+      (event, session) => {
+        if (!mounted) {
+          return;
+        }
+
+        setUser(
+          session?.user || null
+        );
+
+        if (
+          event === "PASSWORD_RECOVERY"
+        ) {
+          setAuthScreen(
+            "update-password"
           );
         }
       }
@@ -336,10 +623,16 @@ function App() {
 
       authListener.subscription.unsubscribe();
     };
-  }, []);
+  }, [isResetPasswordRoute]);
 
   useEffect(() => {
     if (!user) {
+      return;
+    }
+
+    if (
+      authScreen === "update-password"
+    ) {
       return;
     }
 
@@ -356,11 +649,8 @@ function App() {
       throw error;
     }
 
-    const currentSession =
-      data.session;
-
     const currentAccessToken =
-      currentSession?.access_token;
+      data.session?.access_token;
 
     if (currentAccessToken) {
       return currentAccessToken;
@@ -836,10 +1126,52 @@ function App() {
     );
   }
 
+  if (
+    isResetPasswordRoute &&
+    authScreen === "update-password"
+  ) {
+    return (
+      <UpdatePasswordForm
+        onComplete={async () => {
+          await supabase.auth.signOut({
+            scope: "local"
+          });
+
+          setUser(null);
+          setAuthScreen("login");
+
+          window.history.replaceState(
+            {},
+            document.title,
+            "/"
+          );
+        }}
+      />
+    );
+  }
+
   if (!user) {
+    if (
+      authScreen ===
+      "forgot-password"
+    ) {
+      return (
+        <ForgotPasswordForm
+          onBack={() =>
+            setAuthScreen("login")
+          }
+        />
+      );
+    }
+
     return (
       <AuthForm
         onAuthenticated={setUser}
+        onForgotPassword={() =>
+          setAuthScreen(
+            "forgot-password"
+          )
+        }
       />
     );
   }
@@ -1081,9 +1413,7 @@ function App() {
                   onClick={checkAnswer}
                   disabled={
                     !selectedAnswer ||
-                    Boolean(
-                      hasAnsweredCurrentQuestion()
-                    )
+                    hasAnsweredCurrentQuestion()
                   }
                 >
                   {hasAnsweredCurrentQuestion()
