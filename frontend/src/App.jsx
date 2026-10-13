@@ -102,11 +102,9 @@ function AuthForm({
           return;
         }
 
-        if (result.data.user) {
-          onAuthenticated(
-            result.data.user
-          );
-        }
+        onAuthenticated(
+          result.data.user
+        );
 
         return;
       }
@@ -272,7 +270,7 @@ function ForgotPasswordForm({
       }
 
       setMessage(
-        "If an account exists for this email, a password reset link has been sent. Check your inbox and spam folder."
+        "If an account exists for this email, a reset link has been sent. Check your inbox and spam folder."
       );
     } catch (error) {
       console.error(
